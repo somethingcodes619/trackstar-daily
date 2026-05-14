@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trackstar Daily</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --gold: #e8a935;
+    --gold-light: #f0b840;
+    --green: #6dd66d;
+    --red: #e06060;
+    --bg: #0a0a0a;
+    --bg2: #111;
+    --bg3: #161616;
+    --border: #1e1e1e;
+    --border2: #2a2a2a;
+    --text: #f0ede8;
+    --text2: #b0aa9f;
+    --text3: #666;
+    --text4: #3a3a3a;
+    --tier-color: #e8a935;
+  }
+
+  html, body { height:100%; background:var(--bg); color:var(--text); font-family:'DM Sans',sans-serif; -webkit-font-smoothing:antialiased; }
+  body { display:flex; justify-content:center; align-items:flex-start; min-height:100vh; }
+  #app { width:100%; max-width:480px; min-height:100vh; background:var(--bg); position:relative; overflow:hidden; display:flex; flex-direction:column; }
+
+  .bg-vinyl { position:fixed; top:-140px; right:-140px; width:420px; height:420px; border-radius:50%; border:1px solid #151515; pointer-events:none; z-index:0; }
+  .bg-vinyl::before { content:''; position:absolute; inset:50px; border-radius:50%; border:1px solid #151515; }
+  .bg-vinyl::after  { content:''; position:absolute; inset:110px; border-radius:50%; background:#0d0d0d; border:1px solid #151515; }
+
+  header { position:relative; z-index:10; padding:24px 24px 16px; border-bottom:1px solid var(--border); display:flex; align-items:flex-end; justify-content:space-between; flex-shrink:0; }
+  .logo { font-family:'Bebas Neue',sans-serif; font-size:38px; letter-spacing:4px; line-height:1; }
+  .logo em { color:var(--gold); font-style:normal; }
+  .logo-sub { font-family:'DM Mono',monospace; font-size:10px; letter-spacing:3px; color:var(--text4); text-transform:uppercase; margin-top:3px; }
+  .header-right { text-align:right; padding-bottom:2px; }
+  .day-num { font-family:'Bebas Neue',sans-serif; font-size:26px; color:var(--text3); letter-spacing:2px; line-height:1; }
+  .day-lbl { font-family:'DM Mono',monospace; font-size:9px; letter-spacing:2px; color:var(--text4); text-transform:uppercase; }
+
+  nav { position:relative; z-index:10; display:flex; border-bottom:1px solid var(--border); flex-shrink:0; }
+  .tab-btn { flex:1; padding:13px 0; font-family:'DM Mono',monospace; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--text4); background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; transition:color .2s,border-color .2s; }
+  .tab-btn.active { color:var(--gold); border-bottom-color:var(--gold); }
+  .tab-btn:hover:not(.active) { color:var(--text3); }
+
+  .panel { display:none; padding:20px 24px 50px; position:relative; z-index:10; flex:1; overflow-y:auto; }
+  .panel.active { display:block; animation:fadeUp .25s ease; }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(6px);} to{opacity:1;transform:translateY(0);} }
+  .panel::-webkit-scrollbar { width:3px; }
+  .panel::-webkit-scrollbar-thumb { background:#1e1e1e; border-radius:2px; }
+
+  .score-row { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px; }
+  .score-card { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:13px 10px; text-align:center; }
+  .score-num { font-family:'Bebas Neue',sans-serif; font-size:32px; line-height:1; }
+  .score-lbl { font-family:'DM Mono',monospace; font-size:9px; letter-spacing:2px; text-transform:uppercase; color:var(--text4); margin-top:4px; }
+
+  /* ── Tier heat bar ── */
+  .tier-bar-wrap { margin-bottom:18px; }
+  .tier-bar-label { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .tier-name { font-family:'DM Mono',monospace; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; transition:color .5s; }
+  .tier-round-lbl { font-family:'DM Mono',monospace; font-size:10px; color:var(--text4); }
+  .tier-track { width:100%; height:4px; background:var(--bg3); border-radius:2px; overflow:hidden; }
+  .tier-fill { height:100%; border-radius:2px; transition:width .7s cubic-bezier(.22,1,.36,1),background .5s; }
+  .tier-pips { display:flex; gap:4px; margin-top:6px; }
+  .tier-pip { flex:1; height:3px; border-radius:2px; background:var(--bg3); transition:background .4s; }
+
+  /* ── Player card ── */
+  .player-card { background:var(--bg2); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:16px; position:relative; overflow:hidden; }
+  .player-card::before { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent 0%,var(--tier-color) 50%,transparent 100%); opacity:.5; transition:background .5s; }
+
+  .clue-row { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:18px; }
+  .chip { background:var(--bg3); border:1px solid #252525; border-radius:30px; padding:5px 13px; font-family:'DM Mono',monospace; font-size:11px; color:var(--text3); letter-spacing:.5px; }
+  .chip.accent { border-color:var(--tier-color); color:var(--tier-color); transition:border-color .5s,color .5s; }
+
+  .vinyl-row { display:flex; align-items:center; gap:16px; margin-bottom:18px; }
+  .vinyl { width:80px; height:80px; border-radius:50%; flex-shrink:0;
+    background:radial-gradient(circle at 50% 50%,#252525 18%,transparent 18%),
+      repeating-radial-gradient(circle at 50% 50%,#0d0d0d 0px,#1a1a1a 2px,#111 4px,#181818 6px,#101010 8px);
+    border:2px solid #2a2a2a; position:relative; transition:box-shadow .3s; overflow:hidden; }
+  .vinyl.spinning { animation:spin 2.2s linear infinite; box-shadow:0 0 28px color-mix(in srgb,var(--tier-color) 25%,transparent); }
+  @keyframes spin { from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
+  .vinyl-art { position:absolute; inset:0; border-radius:50%; background-size:cover; background-position:center; opacity:0; transition:opacity .5s; }
+  .vinyl-art.loaded { opacity:.55; }
+  .vinyl::after { content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:13px; height:13px; border-radius:50%; background:var(--tier-color); border:2px solid var(--bg); z-index:2; transition:background .5s; }
+
+  .track-meta { flex:1; }
+  .track-label { font-family:'DM Mono',monospace; font-size:9px; letter-spacing:2.5px; text-transform:uppercase; color:var(--text4); margin-bottom:6px; }
+  .track-hint { font-family:'Bebas Neue',sans-serif; font-size:21px; letter-spacing:2px; color:var(--text); line-height:1.15; }
+  .track-sub { font-family:'DM Mono',monospace; font-size:11px; color:var(--text3); margin-top:5px; }
+
+  .waveform { display:flex; align-items:center; gap:3px; height:42px; margin-bottom:14px; }
+  .wbar { flex:1; border-radius:2px; background:var(--bg3); transition:background .08s; min-width:3px; }
+  .wbar.active { background:var(--tier-color); }
+  .wbar.played { background:#2a2418; }
+
+  .play-btn { width:100%; background:var(--tier-color); border:none; border-radius:11px; padding:14px; font-family:'DM Mono',monospace; font-size:12px; letter-spacing:2.5px; text-transform:uppercase; color:var(--bg); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:11px; font-weight:500; transition:filter .15s,transform .1s,background .5s; }
+  .play-btn:hover:not(:disabled) { filter:brightness(1.12); }
+  .play-btn:active:not(:disabled) { transform:scale(.98); }
+  .play-btn:disabled { background:var(--bg3) !important; color:var(--text4); cursor:not-allowed; filter:none; }
+  .play-icon { width:0; height:0; border-style:solid; border-width:6px 0 6px 11px; border-color:transparent transparent transparent var(--bg); }
+  .stop-icon { width:10px; height:10px; background:var(--bg); border-radius:2px; }
+
+  .guess-section { margin-bottom:14px; }
+  .guess-label { font-family:'DM Mono',monospace; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--text4); margin-bottom:10px; }
+  .guess-row { display:flex; gap:9px; }
+  .guess-input { flex:1; background:var(--bg2); border:1px solid #252525; border-radius:10px; padding:13px 15px; color:var(--text); font-family:'DM Mono',monospace; font-size:14px; letter-spacing:.5px; outline:none; transition:border-color .2s; }
+  .guess-input:focus { border-color:var(--tier-color); }
+  .guess-input::placeholder { color:var(--text4); font-size:12px; }
+  .guess-input:disabled { opacity:.4; }
+  .lock-btn { background:var(--tier-color); border:none; border-radius:10px; padding:13px 17px; font-family:'DM Mono',monospace; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--bg); cursor:pointer; font-weight:500; white-space:nowrap; transition:filter .15s,transform .1s,background .5s; }
+  .lock-btn:hover:not(:disabled) { filter:brightness(1.12); }
+  .lock-btn:active:not(:disabled) { transform:scale(.97); }
+  .lock-btn:disabled { background:var(--bg3) !important; color:var(--text4); cursor:not-allowed; filter:none; }
+
+  .result-box { border-radius:12px; padding:18px 20px; margin-bottom:14px; display:none; }
+  .result-box.win  { background:#0b1c0b; border:1px solid #2a5a2a; }
+  .result-box.lose { background:#1c0b0b; border:1px solid #5a2a2a; }
+  .result-title { font-family:'Bebas Neue',sans-serif; font-size:28px; letter-spacing:3px; margin-bottom:5px; }
+  .result-box.win  .result-title { color:var(--green); }
+  .result-box.lose .result-title { color:var(--red); }
+  .result-body { font-family:'DM Mono',monospace; font-size:12px; color:var(--text3); line-height:1.8; }
+  .result-body strong { color:var(--text); font-weight:500; }
+
+  .next-btn { width:100%; background:transparent; border:1px solid var(--tier-color); border-radius:11px; padding:14px; font-family:'DM Mono',monospace; font-size:12px; letter-spacing:2px; text-transform:uppercase; color:var(--tier-color); cursor:pointer; margin-bottom:9px; transition:background .15s,transform .1s; }
+  .next-btn:hover { background:rgba(255,255,255,.04); }
+  .next-btn:active { transform:scale(.98); }
+  .share-btn { width:100%; background:transparent; border:1px solid var(--border2); border-radius:11px; padding:12px; font-family:'DM Mono',monospace; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--text3); cursor:pointer; transition:border-color .2s,color .2s; }
+  .share-btn:hover { border-color:var(--gold); color:var(--gold); }
+
+  .countdown-bar { display:flex; align-items:center; gap:10px; padding:11px 15px; background:var(--bg2); border:1px solid var(--border); border-radius:10px; margin-top:10px; }
+  .pulse-dot { width:7px; height:7px; border-radius:50%; background:var(--gold); flex-shrink:0; animation:pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.2;} }
+  .countdown-txt { font-family:'DM Mono',monospace; font-size:12px; color:var(--text3); }
+  .countdown-time { color:var(--gold); margin-left:4px; }
+
+  .sec-title { font-family:'DM Mono',monospace; font-size:10px; letter-spacing:2.5px; text-transform:uppercase; color:var(--text4); margin-bottom:14px; }
+  .lb-item { display:flex; align-items:center; gap:11px; padding:11px 0; border-bottom:1px solid #131313; }
+  .lb-rank { font-family:'DM Mono',monospace; font-size:11px; color:var(--text4); width:26px; text-align:center; flex-shrink:0; }
+  .lb-rank.gold   { color:var(--gold); font-size:13px; }
+  .lb-rank.silver { color:#b0b0b0; font-size:12px; }
+  .lb-rank.bronze { color:#b87040; font-size:12px; }
+  .lb-avatar { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:500; flex-shrink:0; font-family:'DM Mono',monospace; }
+  .lb-name { flex:1; font-size:14px; color:var(--text2); }
+  .you-tag { font-size:9px; background:#1e1a0a; border:1px solid #3a3010; color:var(--gold); padding:2px 7px; border-radius:20px; font-family:'DM Mono',monospace; margin-left:7px; letter-spacing:1px; vertical-align:middle; }
+  .lb-score { font-family:'DM Mono',monospace; font-size:11px; color:var(--text4); text-align:right; }
+  .lb-score span { display:block; font-size:17px; color:var(--gold); font-weight:500; }
+  .streak-panel { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:18px; margin-top:18px; }
+  .sbar-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .sbar-row:last-child { margin-bottom:0; }
+  .sbar-name { font-family:'DM Mono',monospace; font-size:11px; color:var(--text4); width:76px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sbar { flex:1; height:6px; background:var(--bg3); border-radius:3px; overflow:hidden; }
+  .sbar-fill { height:100%; border-radius:3px; background:var(--gold); transition:width 1.2s cubic-bezier(.22,1,.36,1); }
+  .sbar-fill.you { background:var(--green); }
+  .sbar-val { font-family:'DM Mono',monospace; font-size:11px; color:var(--text4); width:28px; text-align:right; }
+
+  .big-streak { font-family:'Bebas Neue',sans-serif; font-size:68px; color:var(--gold); line-height:1; }
+  .streak-lbl { font-family:'DM Mono',monospace; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--text4); }
+  .streak-best { font-size:13px; color:var(--text3); margin-top:4px; font-family:'DM Mono',monospace; }
+  .week-dots { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+  .dot { width:28px; height:28px; border-radius:50%; background:var(--bg3); border:1px solid #222; display:flex; align-items:center; justify-content:center; }
+  .dot.won  { background:#142414; border-color:#2e5a2e; }
+  .dot.lost { background:#241414; border-color:#5a2e2e; }
+  .dot.today { border-color:var(--gold); border-width:2px; }
+  .dist-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .dist-n { font-family:'DM Mono',monospace; font-size:12px; color:var(--text3); width:18px; text-align:center; }
+  .dist-bar { flex:1; height:24px; background:var(--bg3); border-radius:4px; overflow:hidden; }
+  .dist-fill { height:100%; border-radius:4px; display:flex; align-items:center; padding-left:10px; font-family:'DM Mono',monospace; font-size:11px; }
+  .dist-fill.peak   { background:var(--gold); color:var(--bg); }
+  .dist-fill.normal { background:#222; color:var(--text3); }
+  .divider { height:1px; background:var(--border); margin:18px 0; }
+
+  .toast { position:fixed; bottom:28px; left:50%; transform:translateX(-50%) translateY(16px); background:var(--text); color:var(--bg); font-family:'DM Mono',monospace; font-size:12px; letter-spacing:1px; padding:11px 22px; border-radius:30px; opacity:0; transition:opacity .2s,transform .2s; pointer-events:none; white-space:nowrap; z-index:1000; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="bg-vinyl"></div>
+
+  <header>
+    <div>
+      <div class="logo">TRACKSTAR <em>DAILY</em></div>
+      <div class="logo-sub">Guess the artist. One shot.</div>
+    </div>
+    <div class="header-right">
+      <div class="day-num" id="drop-number">#142</div>
+      <div class="day-lbl">Today's Drop</div>
+    </div>
+  </header>
+
+  <nav>
+    <button class="tab-btn active" onclick="switchTab('game')">Game</button>
+    <button class="tab-btn" onclick="switchTab('leaderboard')">Leaderboard</button>
+    <button class="tab-btn" onclick="switchTab('stats')">My Stats</button>
+  </nav>
+
+  <!-- ═══ GAME ═══ -->
+  <div class="panel active" id="panel-game">
+
+    <div class="score-row">
+      <div class="score-card">
+        <div class="score-num" id="score-today" style="color:var(--gold)">0</div>
+        <div class="score-lbl">Today's Score</div>
+      </div>
+      <div class="score-card">
+        <div class="score-num" id="score-streak" style="color:var(--text)">0</div>
+        <div class="score-lbl">Day Streak</div>
+      </div>
+      <div class="score-card">
+        <div class="score-num" id="score-round" style="color:var(--text3)">1</div>
+        <div class="score-lbl">Round</div>
+      </div>
+    </div>
+
+    <div class="tier-bar-wrap">
+      <div class="tier-bar-label">
+        <span class="tier-name" id="tier-name">Everyone Knows This</span>
+        <span class="tier-round-lbl" id="tier-round-lbl">Round 1</span>
+      </div>
+      <div class="tier-track">
+        <div class="tier-fill" id="tier-fill" style="width:16.6%"></div>
+      </div>
+      <div class="tier-pips" id="tier-pips"></div>
+    </div>
+
+    <div class="player-card">
+      <div class="clue-row">
+        <div class="chip accent" id="chip-genre">—</div>
+        <div class="chip" id="chip-era">—</div>
+        <div class="chip" id="chip-region">—</div>
+      </div>
+      <div class="vinyl-row">
+        <div class="vinyl" id="vinyl">
+          <div class="vinyl-art" id="vinyl-art"></div>
+        </div>
+        <div class="track-meta">
+          <div class="track-label">Now Playing</div>
+          <div class="track-hint" id="track-hint">Loading...</div>
+          <div class="track-sub" id="track-sub">Press play to hear the snippet</div>
+        </div>
+      </div>
+      <div class="waveform" id="waveform"></div>
+      <button class="play-btn" id="play-btn" onclick="togglePlay()" disabled>
+        <span id="play-icon" class="play-icon"></span>
+        <span id="play-label">Loading...</span>
+      </button>
+    </div>
+
+    <div class="result-box" id="result-box">
+      <div class="result-title" id="result-title"></div>
+      <div class="result-body"  id="result-body"></div>
+    </div>
+
+    <div class="guess-section" id="guess-section">
+      <div class="guess-label" id="guess-label">Who is this artist?</div>
+      <div class="guess-row">
+        <input class="guess-input" id="guess-input" type="text" placeholder="Type artist name..." autocomplete="off" spellcheck="false" disabled />
+        <button class="lock-btn" id="lock-btn" onclick="submitGuess()" disabled>Lock In</button>
+      </div>
+    </div>
+
+    <div id="next-actions" style="display:none;margin-top:4px;">
+      <button class="next-btn" id="next-btn" onclick="nextRound()">Next Round →</button>
+      <button class="share-btn" onclick="shareResult()">Share My Score</button>
+    </div>
+
+    <div class="countdown-bar" id="done-countdown" style="display:none;">
+      <div class="pulse-dot"></div>
+      <div class="countdown-txt">Next drop in <span class="countdown-time" id="cd-game">--:--:--</span></div>
+    </div>
+
+  </div>
+
+  <!-- ═══ LEADERBOARD ═══ -->
+  <div class="panel" id="panel-leaderboard">
+    <div class="countdown-bar" style="margin-bottom:20px;">
+      <div class="pulse-dot"></div>
+      <div class="countdown-txt">Next drop in <span class="countdown-time" id="cd-lb">--:--:--</span></div>
+    </div>
+    <div class="sec-title" id="lb-title">Top Scores — Day #142</div>
+    <div id="lb-list"></div>
+    <div class="streak-panel">
+      <div class="sec-title">Streak Leaders</div>
+      <div id="streak-bars"></div>
+    </div>
+  </div>
+
+  <!-- ═══ STATS ═══ -->
+  <div class="panel" id="panel-stats">
+    <div style="display:flex;align-items:flex-end;gap:12px;margin-bottom:20px;">
+      <div class="big-streak" id="stat-streak">0</div>
+      <div>
+        <div class="streak-lbl">Current Streak</div>
+        <div class="streak-best" id="stat-best">Best: 0 days</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:22px;">
+      <div class="score-card"><div class="score-num" style="color:var(--text)"  id="st-played">0</div><div class="score-lbl">Played</div></div>
+      <div class="score-card"><div class="score-num" style="color:var(--green)" id="st-winrate">0%</div><div class="score-lbl">Win Rate</div></div>
+      <div class="score-card"><div class="score-num" style="color:var(--gold)"  id="st-best">0</div><div class="score-lbl">Best Score</div></div>
+    </div>
+    <div class="sec-title">Last 7 Days</div>
+    <div class="week-dots" id="week-dots"></div>
+    <div class="sec-title">Score Distribution</div>
+    <div id="score-dist"></div>
+    <div class="divider"></div>
+    <div class="sec-title">Weekly Scores</div>
+    <div id="score-history"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ══════════════════════════════════════
+   TIERS
+══════════════════════════════════════ */
+const TIERS = [
+  { tier:1, label:'Everyone Knows This',   color:'#e8a935', basePoints:10  },
+  { tier:2, label:'Pretty Mainstream',     color:'#50b8e0', basePoints:20  },
+  { tier:3, label:'You Know Your Stuff',   color:'#a070e0', basePoints:35  },
+  { tier:4, label:'Real Fan Territory',    color:'#e07840', basePoints:55  },
+  { tier:5, label:'Deep Cut',              color:'#e06060', basePoints:80  },
+  { tier:6, label:"You're Built Different",color:'#60e0a0', basePoints:120 },
+];
+
+// Multiplier based on number of plays used (1, 2, or 3)
+const PLAY_MULT = [1.0, 0.7, 0.4];
+
+/* ══════════════════════════════════════
+   DEMO ROUNDS — swapped out by API
+══════════════════════════════════════ */
+const DEMO_ROUNDS = [
+  { tier:1, artist:'Drake',            genre:'Rap',     era:'2010s', region:'Toronto',    hint:'OVO certified heat',        previewUrl:null, albumArt:null },
+  { tier:2, artist:'SZA',              genre:'R&B',     era:'2020s', region:'New Jersey', hint:'Alt-R&B anthem',            previewUrl:null, albumArt:null },
+  { tier:3, artist:'Tyler the Creator',genre:'Rap',     era:'2010s', region:'LA',         hint:'Odd Future visionary',      previewUrl:null, albumArt:null },
+  { tier:4, artist:'JID',              genre:'Rap',     era:'2020s', region:'Atlanta',    hint:'Technical wordsmith',       previewUrl:null, albumArt:null },
+  { tier:5, artist:'Saba',             genre:'Hip-Hop', era:'2010s', region:'Chicago',    hint:'Introspective storyteller', previewUrl:null, albumArt:null },
+  { tier:6, artist:'billy woods',      genre:'Hip-Hop', era:'2020s', region:'NYC',        hint:'Abstract underground',      previewUrl:null, albumArt:null },
+];
+
+/* ══════════════════════════════════════
+   STATE
+══════════════════════════════════════ */
+let rounds    = [];
+let roundIdx  = 0;
+let score     = 0;
+let gameDone  = false;
+let playing   = false;
+let playCount = 0;
+let waveTimer = null;
+let playTimer = null;
+let activeBars = [];
+let audio     = null;
+
+const dayStreak = parseInt(localStorage.getItem('ts_streak') || '0');
+const bestScore = parseInt(localStorage.getItem('ts_best')   || '0');
+
+const LEADERBOARD = [
+  { name:'DJ_Remy',   initials:'DR', bg:'#1a1a3e', tc:'#7070e0', score:1840, streak:31 },
+  { name:'BeatKween', initials:'BK', bg:'#1a2e1a', tc:'#6dd66d', score:1520, streak:28 },
+  { name:'You',       initials:'YO', bg:'#2e2610', tc:'#e8a935', score:0,    streak:dayStreak, isYou:true },
+  { name:'WaxPoetic', initials:'WP', bg:'#2e1a1a', tc:'#e06060', score:1100, streak:15 },
+  { name:'TrackHead', initials:'TH', bg:'#1a2a2e', tc:'#50b0c0', score:980,  streak:9  },
+  { name:'BasslineQ', initials:'BQ', bg:'#1e1a2e', tc:'#a070e0', score:760,  streak:5  },
+];
+
+/* ══════════════════════════════════════
+   TIER THEMING
+══════════════════════════════════════ */
+function setTierColor(color) {
+  document.documentElement.style.setProperty('--tier-color', color);
+}
+
+function updateTierUI(tierNum) {
+  const t   = TIERS[tierNum - 1];
+  const pct = (tierNum / TIERS.length) * 100;
+  setTierColor(t.color);
+  document.getElementById('tier-name').textContent      = t.label;
+  document.getElementById('tier-name').style.color      = t.color;
+  document.getElementById('tier-round-lbl').textContent = 'Round ' + (roundIdx + 1);
+  document.getElementById('tier-fill').style.width      = pct + '%';
+  document.getElementById('tier-fill').style.background = t.color;
+  document.getElementById('tier-pips').innerHTML = TIERS.map((p, i) => `
+    <div class="tier-pip" style="background:${i < tierNum ? p.color : 'var(--bg3)'}"></div>`).join('');
+}
+
+/* ══════════════════════════════════════
+   INIT
+══════════════════════════════════════ */
+async function init() {
+  // Already played today?
+  const today      = new Date().toISOString().split('T')[0];
+  const lastPlayed = localStorage.getItem('ts_last_played');
+
+  buildLeaderboard();
+  buildStats();
+  updateCountdown();
+  setInterval(updateCountdown, 1000);
+
+  if (lastPlayed === today) {
+    score = parseInt(localStorage.getItem('ts_today_score') || '0');
+    showAlreadyPlayed();
+    return;
+  }
+
+  try {
+    const res  = await fetch('/.netlify/functions/today');
+    if (!res.ok) throw new Error('no drop');
+    const data = await res.json();
+    rounds = data.rounds;
+    document.getElementById('drop-number').textContent = '#' + data.number;
+    document.getElementById('lb-title').textContent    = 'Top Scores — Day #' + data.number;
+  } catch {
+    rounds = DEMO_ROUNDS; // offline / dev fallback
+  }
+
+  loadRound();
+}
+
+function showAlreadyPlayed() {
+  document.getElementById('track-hint').textContent     = 'Already played today';
+  document.getElementById('track-sub').textContent      = 'Your score: ' + score + ' pts';
+  document.getElementById('play-btn').disabled          = true;
+  document.getElementById('play-label').textContent     = 'Come back tomorrow';
+  document.getElementById('guess-section').style.display = 'none';
+  document.getElementById('done-countdown').style.display = 'flex';
+  document.getElementById('score-today').textContent    = score;
+  document.getElementById('score-streak').textContent   = dayStreak;
+  updateTierUI(1);
+}
+
+/* ══════════════════════════════════════
+   WAVEFORM
+══════════════════════════════════════ */
+function buildWaveform() {
+  const wf = document.getElementById('waveform');
+  wf.innerHTML = '';
+  activeBars = [];
+  for (let i = 0; i < 52; i++) {
+    const b = document.createElement('div');
+    b.className = 'wbar';
+    b.style.height = Math.round(8 + Math.abs(Math.sin(i * 0.44 + roundIdx * 1.7)) * 28 + Math.sin(i * 0.9) * 5) + 'px';
+    wf.appendChild(b);
+    activeBars.push(b);
+  }
+}
+
+/* ══════════════════════════════════════
+   PLAYBACK
+══════════════════════════════════════ */
+function togglePlay() { playing ? stopPlay() : startPlay(); }
+
+function startPlay() {
+  if (playCount >= 3) return;
+  playCount++;
+  playing = true;
+
+  const r = rounds[roundIdx];
+
+  if (r && r.previewUrl) {
+    audio = new Audio(r.previewUrl);
+    audio.volume = 0.85;
+    audio.addEventListener('timeupdate', () => {
+      const pct = audio.currentTime / audio.duration;
+      const idx = Math.floor(pct * activeBars.length);
+      activeBars.forEach((b, i) => {
+        b.className = 'wbar' + (i < idx ? ' played' : i === idx ? ' active' : '');
+      });
+    });
+    audio.addEventListener('ended', stopPlayState);
+    audio.play().catch(() => showToast('Tap play again to start audio'));
+  } else {
+    // Demo mode — animated waveform only
+    let i = 0;
+    waveTimer = setInterval(() => {
+      activeBars.forEach((b, idx) => {
+        b.className = 'wbar' + (idx < i ? ' played' : idx === i ? ' active' : '');
+      });
+      i++;
+      if (i > activeBars.length) { clearInterval(waveTimer); stopPlayState(); }
+    }, 55);
+    playTimer = setTimeout(stopPlayState, activeBars.length * 55 + 300);
+  }
+
+  document.getElementById('vinyl').classList.add('spinning');
+  document.getElementById('play-icon').className    = 'stop-icon';
+  document.getElementById('play-label').textContent = 'Playing...';
+}
+
+function stopPlay() {
+  if (audio) { audio.pause(); audio.currentTime = 0; }
+  clearInterval(waveTimer); clearTimeout(playTimer);
+  activeBars.forEach(b => b.className = 'wbar played');
+  stopPlayState();
+}
+
+function stopPlayState() {
+  playing = false;
+  document.getElementById('vinyl').classList.remove('spinning');
+  document.getElementById('play-icon').className = 'play-icon';
+  const rem = 3 - playCount;
+  if (rem > 0) {
+    document.getElementById('play-label').textContent = 'Play Again (' + rem + ' left)';
+    document.getElementById('track-sub').textContent  = rem + ' play' + (rem !== 1 ? 's' : '') + ' remaining';
+  } else {
+    document.getElementById('play-btn').disabled      = true;
+    document.getElementById('play-label').textContent = 'No Plays Remaining';
+    document.getElementById('track-sub').textContent  = 'Lock in your answer!';
+  }
+}
+
+/* ══════════════════════════════════════
+   LOAD ROUND
+══════════════════════════════════════ */
+function loadRound() {
+  const r = rounds[roundIdx];
+  if (!r) { showAllCleared(); return; }
+
+  updateTierUI(r.tier);
+
+  document.getElementById('chip-genre').textContent   = r.genre;
+  document.getElementById('chip-era').textContent     = r.era;
+  document.getElementById('chip-region').textContent  = r.region;
+  document.getElementById('track-hint').textContent   = r.hint;
+  document.getElementById('track-sub').textContent    = 'Press play to hear the snippet';
+  document.getElementById('score-round').textContent  = roundIdx + 1;
+  document.getElementById('score-today').textContent  = score;
+  document.getElementById('score-streak').textContent = dayStreak;
+
+  const art = document.getElementById('vinyl-art');
+  if (r.albumArt) {
+    art.style.backgroundImage = `url(${r.albumArt})`;
+    art.classList.add('loaded');
+  } else {
+    art.style.backgroundImage = '';
+    art.classList.remove('loaded');
+  }
+
+  document.getElementById('result-box').style.display      = 'none';
+  document.getElementById('next-actions').style.display    = 'none';
+  document.getElementById('done-countdown').style.display  = 'none';
+  document.getElementById('guess-section').style.display   = 'block';
+  document.getElementById('guess-label').textContent       = 'Who is this artist?';
+  document.getElementById('guess-input').value             = '';
+  document.getElementById('guess-input').disabled          = false;
+  document.getElementById('lock-btn').disabled             = false;
+  document.getElementById('play-btn').disabled             = false;
+  document.getElementById('play-label').textContent        = 'Play Snippet';
+  document.getElementById('play-icon').className           = 'play-icon';
+
+  playCount = 0; playing = false;
+  if (audio) { audio.pause(); audio = null; }
+  clearInterval(waveTimer); clearTimeout(playTimer);
+  document.getElementById('vinyl').classList.remove('spinning');
+  buildWaveform();
+}
+
+function showAllCleared() {
+  const rb = document.getElementById('result-box');
+  rb.className = 'result-box win';
+  rb.style.display = 'block';
+  document.getElementById('result-title').textContent = 'LEGENDARY';
+  document.getElementById('result-body').innerHTML    = 'All 6 tiers cleared. Score: <strong>' + score + ' pts</strong>. You\'re genuinely built different.';
+  document.getElementById('guess-section').style.display = 'none';
+  document.getElementById('done-countdown').style.display = 'flex';
+  saveResult();
+}
+
+/* ══════════════════════════════════════
+   SUBMIT GUESS
+══════════════════════════════════════ */
+async function submitGuess() {
+  const val = document.getElementById('guess-input').value.trim();
+  if (!val) { showToast('Type an artist name first!'); return; }
+
+  stopPlay();
+  document.getElementById('guess-input').disabled   = true;
+  document.getElementById('lock-btn').disabled      = true;
+  document.getElementById('play-btn').disabled      = true;
+  document.getElementById('guess-label').textContent = 'Your answer: ' + val;
+
+  let isCorrect, revealedArtist;
+
+  try {
+    const res = await fetch('/.netlify/functions/guess', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ date: new Date().toISOString().split('T')[0], roundIdx, guess: val, playCount }),
+    });
+    const result = await res.json();
+    isCorrect      = result.correct;
+    revealedArtist = result.artist;
+  } catch {
+    // Client-side fallback for demo mode
+    const normalize = s => s.toLowerCase().replace(/[\s\-''.!&]/g, '');
+    const r = rounds[roundIdx];
+    isCorrect      = normalize(val) === normalize(r.artist);
+    revealedArtist = r.artist;
+  }
+
+  const t   = TIERS[rounds[roundIdx].tier - 1];
+  const rb  = document.getElementById('result-box');
+  const rt  = document.getElementById('result-title');
+  const ra  = document.getElementById('result-body');
+  rb.style.display = 'block';
+
+  if (isCorrect) {
+    const earned = Math.round(t.basePoints * PLAY_MULT[Math.min(playCount - 1, 2)]);
+    score += earned;
+
+    rb.className   = 'result-box win';
+    rt.textContent = 'CORRECT  +' + earned + ' PTS';
+    ra.innerHTML   = 'That\'s <strong>' + revealedArtist + '</strong> — ' + getRoundMsg() +
+      '<br><span style="color:var(--text4);font-size:10px;margin-top:4px;display:block;">' +
+      t.label + ' · ' + playCount + ' play' + (playCount !== 1 ? 's' : '') + ' used</span>';
+
+    document.getElementById('score-today').textContent = score;
+    LEADERBOARD[2].score = score;
+    document.getElementById('next-actions').style.display = 'block';
+
+    // Preview the next tier on the button
+    const next = rounds[roundIdx + 1];
+    if (next) {
+      const nt = TIERS[next.tier - 1];
+      const nb = document.getElementById('next-btn');
+      nb.textContent  = 'Next: ' + nt.label + ' →';
+      nb.style.borderColor = nt.color;
+      nb.style.color       = nt.color;
+    } else {
+      document.getElementById('next-btn').textContent = 'Final Round →';
+    }
+  } else {
+    rb.className   = 'result-box lose';
+    rt.textContent = 'GAME OVER';
+    ra.innerHTML   = 'The artist was <strong>' + revealedArtist + '</strong>.<br>' +
+      'You scored <strong>' + score + ' pts</strong> across ' + roundIdx +
+      ' round' + (roundIdx !== 1 ? 's' : '') + '. Come back tomorrow!';
+    gameDone = true;
+    document.getElementById('next-actions').style.display    = 'none';
+    document.getElementById('done-countdown').style.display  = 'flex';
+    const sb = document.createElement('button');
+    sb.className = 'share-btn';
+    sb.style.marginTop = '12px';
+    sb.textContent = 'Share My Score';
+    sb.onclick = shareResult;
+    document.getElementById('panel-game').appendChild(sb);
+    saveResult();
+  }
+}
+
+function getRoundMsg() {
+  return ['Solid start!','Good ear!','You know your stuff!','Impressive!','Deep cut knowledge!','Legendary taste!'][Math.min(roundIdx, 5)];
+}
+
+function nextRound() { roundIdx++; loadRound(); }
+
+/* ══════════════════════════════════════
+   PERSIST
+══════════════════════════════════════ */
+function saveResult() {
+  const today = new Date().toISOString().split('T')[0];
+  localStorage.setItem('ts_last_played',  today);
+  localStorage.setItem('ts_today_score',  score);
+  if (score > bestScore) localStorage.setItem('ts_best', score);
+  LEADERBOARD[2].score  = score;
+  LEADERBOARD[2].streak = dayStreak;
+  buildLeaderboard();
+}
+
+/* ══════════════════════════════════════
+   SHARE
+══════════════════════════════════════ */
+function shareResult() {
+  const emojis   = ['🟡','🔵','🟣','🟠','🔴','🟢'];
+  const reached  = rounds.slice(0, Math.max(roundIdx + 1, 1)).map((r, i) => {
+    return (i < roundIdx || (!gameDone && i === roundIdx)) ? emojis[r.tier - 1] : '⬛';
+  }).join('');
+  const text = [
+    'TRACKSTAR DAILY ' + document.getElementById('drop-number').textContent,
+    'Score: ' + score + ' pts | Round ' + (roundIdx + 1),
+    'Streak: ' + dayStreak + ' days 🔥',
+    '',
+    reached,
+    '',
+    'trackstar.daily'
+  ].join('\n');
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard!'));
+  } else { showToast('Score: ' + score + ' pts'); }
+}
+
+/* ══════════════════════════════════════
+   TABS
+══════════════════════════════════════ */
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((b, i) =>
+    b.classList.toggle('active', ['game','leaderboard','stats'][i] === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+}
+
+/* ══════════════════════════════════════
+   LEADERBOARD
+══════════════════════════════════════ */
+function buildLeaderboard() {
+  const sorted = [...LEADERBOARD].sort((a, b) => (b.isYou ? score : b.score) - (a.isYou ? score : a.score));
+  const rc = ['gold','silver','bronze','','',''];
+  const rl = ['1st','2nd','3rd','4th','5th','6th'];
+  document.getElementById('lb-list').innerHTML = sorted.map((e, i) => `
+    <div class="lb-item">
+      <div class="lb-rank ${rc[i]}">${rl[i]}</div>
+      <div class="lb-avatar" style="background:${e.bg};color:${e.tc}">${e.initials}</div>
+      <div class="lb-name">${e.name}${e.isYou ? '<span class="you-tag">YOU</span>' : ''}</div>
+      <div class="lb-score"><span>${e.isYou ? score : e.score}</span>pts</div>
+    </div>`).join('');
+
+  const maxSt = Math.max(...LEADERBOARD.map(e => e.isYou ? dayStreak : e.streak));
+  document.getElementById('streak-bars').innerHTML = LEADERBOARD.slice(0, 5).map(e => `
+    <div class="sbar-row">
+      <div class="sbar-name">${e.name}</div>
+      <div class="sbar"><div class="sbar-fill${e.isYou ? ' you' : ''}" style="width:${Math.round((e.isYou ? dayStreak : e.streak) / maxSt * 100)}%"></div></div>
+      <div class="sbar-val">${e.isYou ? dayStreak : e.streak}</div>
+    </div>`).join('');
+}
+
+/* ══════════════════════════════════════
+   STATS
+══════════════════════════════════════ */
+function buildStats() {
+  document.getElementById('stat-streak').textContent = dayStreak;
+  document.getElementById('stat-best').textContent   = 'Best: ' + (localStorage.getItem('ts_best_streak') || '0') + ' days';
+  document.getElementById('st-played').textContent   = localStorage.getItem('ts_total_played') || '0';
+  document.getElementById('st-winrate').textContent  = (localStorage.getItem('ts_winrate') || '0') + '%';
+  document.getElementById('st-best').textContent     = bestScore;
+
+  const week = [true,true,false,true,true,true,null];
+  const dlbl = ['M','T','W','T','F','S','S'];
+  document.getElementById('week-dots').innerHTML = week.map((w, i) => `
+    <div style="text-align:center;">
+      <div class="dot ${w===true?'won':w===false?'lost':''} ${i===6?'today':''}"></div>
+      <div style="font-family:'DM Mono',monospace;font-size:8px;color:var(--text4);margin-top:4px;">${dlbl[i]}</div>
+    </div>`).join('');
+
+  const dist = [0,3,6,5,2,1];
+  const dmax = Math.max(...dist);
+  document.getElementById('score-dist').innerHTML = dist.map((v, i) => `
+    <div class="dist-row">
+      <div class="dist-n">${i+1}</div>
+      <div class="dist-bar"><div class="dist-fill ${v===dmax?'peak':'normal'}" style="width:${dmax>0?Math.round(v/dmax*100):0}%">${v}</div></div>
+    </div>`).join('');
+
+  const ws   = [40,95,0,110,80,130,0];
+  const wlbl = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const wmax = Math.max(...ws);
+  document.getElementById('score-history').innerHTML = ws.map((s, i) => `
+    <div class="sbar-row">
+      <div class="sbar-name">${wlbl[i]}</div>
+      <div class="sbar"><div class="sbar-fill" style="width:${wmax>0?Math.round(s/wmax*100):0}%;background:${s===0?'var(--bg3)':'var(--gold)'}"></div></div>
+      <div class="sbar-val">${s}</div>
+    </div>`).join('');
+}
+
+/* ══════════════════════════════════════
+   COUNTDOWN
+══════════════════════════════════════ */
+function updateCountdown() {
+  const now  = new Date();
+  const next = new Date(now);
+  next.setDate(next.getDate() + 1); next.setHours(0,0,0,0);
+  const d   = next - now;
+  const pad = n => String(n).padStart(2,'0');
+  const str = `${pad(Math.floor(d/3600000))}:${pad(Math.floor((d%3600000)/60000))}:${pad(Math.floor((d%60000)/1000))}`;
+  ['cd-game','cd-lb'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = str; });
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+document.getElementById('guess-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitGuess();
+});
+
+init();
+</script>
+</body>
+</html>
