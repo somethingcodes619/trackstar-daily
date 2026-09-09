@@ -334,14 +334,17 @@ const PLAY_MULT = [1.0, 0.7, 0.4];
 
 /* ══════════════════════════════════════
    DEMO ROUNDS — swapped out by API
+   Keep DEMO_META in sync with the current
+   SCHEDULE entry in netlify/functions/*.js
 ══════════════════════════════════════ */
+const DEMO_META = { number: 142, date: '2026-09-09' };
 const DEMO_ROUNDS = [
-  { tier:1, artist:'Drake',            genre:'Rap',     era:'2010s', region:'Toronto',    hint:'OVO certified heat',        previewUrl:null, albumArt:null },
-  { tier:2, artist:'SZA',              genre:'R&B',     era:'2020s', region:'New Jersey', hint:'Alt-R&B anthem',            previewUrl:null, albumArt:null },
-  { tier:3, artist:'Tyler the Creator',genre:'Rap',     era:'2010s', region:'LA',         hint:'Odd Future visionary',      previewUrl:null, albumArt:null },
-  { tier:4, artist:'JID',              genre:'Rap',     era:'2020s', region:'Atlanta',    hint:'Technical wordsmith',       previewUrl:null, albumArt:null },
-  { tier:5, artist:'Saba',             genre:'Hip-Hop', era:'2010s', region:'Chicago',    hint:'Introspective storyteller', previewUrl:null, albumArt:null },
-  { tier:6, artist:'billy woods',      genre:'Hip-Hop', era:'2020s', region:'NYC',        hint:'Abstract underground',      previewUrl:null, albumArt:null },
+  { tier:1, artist:'Drake',             genre:'Rap',              era:'2010s', region:'Toronto, ON',        hint:'Blew the whole video budget handing out stacks in Miami',           previewUrl:'https://p.scdn.co/mp3-preview/a90a7912992fdfd494c99027c31eb9002b592ed3', albumArt:null },
+  { tier:2, artist:'SZA',               genre:'Alt-R&B',          era:'2020s', region:'Maplewood, NJ',      hint:'A Tarantino revenge fantasy sung sweet as a lullaby',               previewUrl:'https://p.scdn.co/mp3-preview/f29963023285c89b00b3b870e2be3b56b1fc7c68', albumArt:null },
+  { tier:3, artist:'Tyler the Creator', genre:'Alt-Rap',          era:'2010s', region:'Ladera Heights, CA', hint:'Swapped the ski mask for a blond wig and pastel synths',             previewUrl:'https://p.scdn.co/mp3-preview/2a1665d82fb2c9e7e2d0f00d1f16aa8ec3142e20', albumArt:null },
+  { tier:4, artist:'JID',               genre:'Rap',              era:'2020s', region:'East Atlanta, GA',   hint:'Dreamville\'s pocket-sized MC stacking syllables like Jenga',        previewUrl:'https://p.scdn.co/mp3-preview/421318e06bd043baf6a5d0126bca1d6c88476154', albumArt:null },
+  { tier:5, artist:'Saba',              genre:'Hip-Hop',          era:'2020s', region:'West Side, Chicago', hint:'PIVOT Gang poet who turned grief into his prettiest record',         previewUrl:'https://p.scdn.co/mp3-preview/1cad188c141dbb5bf3984c2aeb85561e03ab2585', albumArt:null },
+  { tier:6, artist:'billy woods',       genre:'Abstract Hip-Hop', era:'2020s', region:'New York, NY',       hint:'Face never in the photo, runs Backwoodz, one half of Armand Hammer', previewUrl:'https://p.scdn.co/mp3-preview/3a05df411fe814c18892773e4e35a42ba60372c1', albumArt:null },
 ];
 
 /* ══════════════════════════════════════
@@ -418,6 +421,8 @@ async function init() {
     document.getElementById('lb-title').textContent    = 'Top Scores — Day #' + data.number;
   } catch {
     rounds = DEMO_ROUNDS; // offline / dev fallback
+    document.getElementById('drop-number').textContent = '#' + DEMO_META.number;
+    document.getElementById('lb-title').textContent    = 'Top Scores — Day #' + DEMO_META.number;
   }
 
   loadRound();
