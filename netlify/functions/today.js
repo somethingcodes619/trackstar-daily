@@ -4,7 +4,10 @@
 // Uses Spotify for tiers 1-2 (mainstream), Audius for tiers 3-6 (deeper cuts).
 // The artist answer is NEVER returned here — only sent after a guess via guess.js
 
-const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...args));
+// Node 18+ on Netlify has a global fetch; fall back to node-fetch locally.
+const fetch = globalThis.fetch
+  ? (...args) => globalThis.fetch(...args)
+  : (...args) => import('node-fetch').then(({ default: f }) => f(...args));
 
 // ─────────────────────────────────────────────────────
 // YOUR CURATED DAILY SCHEDULE
