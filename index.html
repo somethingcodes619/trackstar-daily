@@ -151,6 +151,11 @@
   .lb-score { font-family:'DM Mono',monospace; font-size:11px; color:var(--text4); text-align:right; }
   .lb-score span { display:block; font-size:17px; color:var(--gold); font-weight:500; }
   .streak-panel { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:18px; margin-top:18px; }
+  .about-text { font-family:'DM Sans',sans-serif; font-size:12.5px; line-height:1.7; color:var(--text2); margin-top:10px; }
+  .about-text:first-of-type { margin-top:0; }
+  .about-text a { color:var(--gold); text-decoration:none; border-bottom:1px solid rgba(232,169,53,.4); transition:border-color .2s; }
+  .about-text a:hover { border-bottom-color:var(--gold); }
+  .about-text .muted { color:var(--text4); }
   .sbar-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
   .sbar-row:last-child { margin-bottom:0; }
   .sbar-name { font-family:'DM Mono',monospace; font-size:11px; color:var(--text4); width:76px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -350,6 +355,24 @@
     <div class="divider"></div>
     <div class="sec-title">Weekly Scores</div>
     <div id="score-history"></div>
+
+    <div class="divider"></div>
+    <div class="streak-panel">
+      <div class="sec-title">About</div>
+      <p class="about-text">
+        A fan project by <strong style="color:var(--text);font-weight:500;">Patrick Lloyd</strong> —
+        inspired by and built for
+        <a href="https://www.instagram.com/trackstar/" target="_blank" rel="noopener">@trackstar</a>.
+      </p>
+      <p class="about-text">
+        The vision: turn Trackstar's audience into daily active users by putting that
+        "name the artist" instinct into a one-shot daily game.
+      </p>
+      <p class="about-text">
+        <a href="https://www.linkedin.com/in/your-profile" target="_blank" rel="noopener">Connect on LinkedIn →</a>
+        <span class="muted">(placeholder)</span>
+      </p>
+    </div>
   </div>
 </div>
 
