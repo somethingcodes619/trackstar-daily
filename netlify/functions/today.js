@@ -78,7 +78,7 @@ async function buildRound(dateStr, tier) {
   const round = {
     tier,
     tierLabel: TIERS[tier],
-    genre: tidyGenre(pick && pick.primaryGenreName),
+    genre: artist.genre || tidyGenre(pick && pick.primaryGenreName),
     era: pick ? decadeOf(pick.releaseDate) : '',
     region: artist.region,
     hint: artist.hint,
