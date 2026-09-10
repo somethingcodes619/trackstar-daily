@@ -84,8 +84,9 @@
     border:2px solid #2a2a2a; position:relative; transition:box-shadow .3s; overflow:hidden; }
   .vinyl.spinning { animation:spin 2.2s linear infinite; box-shadow:0 0 28px color-mix(in srgb,var(--tier-color) 25%,transparent); }
   @keyframes spin { from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
-  .vinyl-art { position:absolute; inset:0; border-radius:50%; background-size:cover; background-position:center; opacity:0; transition:opacity .5s; }
-  .vinyl-art.loaded { opacity:.55; }
+  .vinyl-art { position:absolute; inset:0; border-radius:50%; background-size:cover; background-position:center; opacity:0; filter:blur(12px); transform:scale(1.18); transition:opacity .5s,filter .7s ease,transform .7s ease; }
+  .vinyl-art.loaded { opacity:.5; }
+  .vinyl-art.revealed { opacity:.95; filter:blur(0); transform:scale(1); }
   .vinyl::after { content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:13px; height:13px; border-radius:50%; background:var(--tier-color); border:2px solid var(--bg); z-index:2; transition:background .5s; }
 
   .track-meta { flex:1; }
@@ -577,6 +578,7 @@ function loadRound() {
   document.getElementById('score-streak').textContent = dayStreak;
 
   const art = document.getElementById('vinyl-art');
+  art.classList.remove('revealed'); // stays blurred until this round is answered
   if (r.albumArt) {
     art.style.backgroundImage = `url(${r.albumArt})`;
     art.classList.add('loaded');
@@ -652,6 +654,10 @@ async function submitGuess() {
   const rt  = document.getElementById('result-title');
   const ra  = document.getElementById('result-body');
   rb.style.display = 'block';
+
+  // Unblur the album art once the round is resolved — a reward on a
+  // correct guess, and the reveal alongside the answer on game over.
+  document.getElementById('vinyl-art').classList.add('revealed');
 
   if (isCorrect) {
     const earned = Math.round(t.basePoints * PLAY_MULT[Math.min(playCount - 1, 2)]);
