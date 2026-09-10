@@ -176,6 +176,44 @@
 
   .toast { position:fixed; bottom:28px; left:50%; transform:translateX(-50%) translateY(16px); background:var(--text); color:var(--bg); font-family:'DM Mono',monospace; font-size:12px; letter-spacing:1px; padding:11px 22px; border-radius:30px; opacity:0; transition:opacity .2s,transform .2s; pointer-events:none; white-space:nowrap; z-index:1000; }
   .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+  /* ─────────────────────────────────────────────────
+     MOBILE POLISH — phones only (≤430px).
+     The centered 480px desktop card is above this
+     breakpoint and is left exactly as-is.
+  ───────────────────────────────────────────────── */
+  @media (max-width: 430px) {
+    /* A little more usable width for every section */
+    .panel { padding:18px 16px 44px; }
+
+    /* ── Score cards: labels big enough to read, one line each ── */
+    .score-row  { gap:8px; margin-bottom:16px; }
+    .score-card { padding:14px 6px; border-radius:12px; }
+    .score-lbl  { font-size:10px; letter-spacing:.5px; margin-top:5px; }
+
+    /* ── Tier heat bar: label stays on a single line ── */
+    .tier-bar-label { gap:10px; }
+    .tier-name      { font-size:10px; letter-spacing:.5px; white-space:nowrap; }
+    .tier-round-lbl { font-size:9px; white-space:nowrap; flex-shrink:0; }
+
+    /* ── Player card: nothing clipped by overflow:hidden ── */
+    .player-card { padding:16px 15px; border-radius:14px; }
+    .clue-row    { gap:6px; margin-bottom:14px; }
+    .chip        { padding:5px 11px; font-size:10px; }
+    .vinyl-row   { gap:13px; margin-bottom:14px; }
+    .vinyl       { width:64px; height:64px; }
+    .track-label { letter-spacing:2px; }
+    .track-hint  { font-size:19px; letter-spacing:1px; }
+    .waveform    { gap:2px; height:38px; }          /* 52 bars now fit ≥300px */
+    .wbar        { min-width:2px; }
+
+    /* ── Touch targets: ~48px tall, and 16px input kills iOS focus-zoom ── */
+    .play-btn      { padding:15px; border-radius:12px; }
+    .guess-row     { gap:8px; }
+    .guess-input   { min-width:0; font-size:16px; padding:15px 14px; border-radius:11px; }
+    .guess-input::placeholder { font-size:14px; }
+    .lock-btn      { flex-shrink:0; padding:15px 16px; font-size:12px; letter-spacing:1.5px; border-radius:11px; }
+  }
 </style>
 </head>
 <body>
