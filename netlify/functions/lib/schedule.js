@@ -8,75 +8,78 @@
 // guess.js only needs the artist, which it derives the same way — no API call.
 
 // ─────────────────────────────────────────────────────
-// ARTIST POOL  — one bucket per difficulty tier
+// ARTIST POOL  — one bucket per difficulty tier, ALL genres
 //   1 = Everyone knows        4 = Deep fan
 //   2 = Mainstream            5 = Underground
 //   3 = Fan favourite         6 = Scholar level
+// Tiers are fame-based, not genre-based: any round can be rock, pop,
+// hip-hop, country, EDM, jazz, indie, electronic, etc.
 // Each entry: { name, genre, itunesArtistId, region, hint }
 // `name` is the accepted answer (see ALIASES in guess.js for alternates).
-// `genre` is the clue shown to the player (iTunes only ever reports
-//   "Hip-Hop/Rap", so we curate this by hand for real variety).
+// `genre` is the clue shown to the player (curated by hand — iTunes'
+//   own genre field is far too coarse).
 // `hint` must NOT contain the artist's name.
 // ─────────────────────────────────────────────────────
 const POOL = {
   1: [
-    { name: 'Drake',            genre: 'Rap',            itunesArtistId: 271256,     region: 'Toronto, ON',      hint: 'Started on a teen soap opera, ended up owning the charts' },
-    { name: 'Kendrick Lamar',   genre: 'Conscious Rap',  itunesArtistId: 368183298,  region: 'Compton, CA',      hint: 'Has a Pulitzer on the shelf and still enters every GOAT debate' },
-    { name: 'Kanye West',       genre: 'Hip-Hop',        itunesArtistId: 2715720,    region: 'Chicago, IL',      hint: 'Producer turned rap star turned walking headline' },
-    { name: 'Beyoncé',          genre: 'Pop / R&B',      itunesArtistId: 1419227,    region: 'Houston, TX',      hint: 'Ex-girl-group leader who became an entire industry' },
-    { name: 'Nicki Minaj',      genre: 'Pop-Rap',        itunesArtistId: 278464538,  region: 'Queens, NY',       hint: 'Pink wigs, cartoon alter egos, and a very loud fanbase' },
-    { name: 'Eminem',           genre: 'Rap',            itunesArtistId: 111051,     region: 'Detroit, MI',      hint: 'Trailer-park kid who rhymed his way into the Hall of Fame' },
-    { name: 'J. Cole',          genre: 'Rap',            itunesArtistId: 73705833,   region: 'Fayetteville, NC', hint: 'Went double platinum with no features and never lets you forget' },
-    { name: 'Travis Scott',     genre: 'Trap',           itunesArtistId: 549236696,  region: 'Houston, TX',      hint: 'Auto-tuned ad-libs and a stadium-sized "it’s lit"' },
+    { name: 'The Beatles',    genre: 'Rock',        itunesArtistId: 136975,    region: 'Liverpool, England', hint: 'Four lads from a northern port city who rewrote what a band could be' },
+    { name: 'Michael Jackson', genre: 'Pop',        itunesArtistId: 32940,     region: 'Gary, IN',           hint: 'One glove, a moonwalk, and the best-selling album ever pressed' },
+    { name: 'Taylor Swift',   genre: 'Pop',         itunesArtistId: 159260351, region: 'Reading, PA',        hint: 'Re-recorded her entire catalogue to own it; toured stadiums for two years' },
+    { name: 'Queen',          genre: 'Rock',        itunesArtistId: 3296287,   region: 'London, England',    hint: 'A mock-operatic single with no real chorus that still fills arenas' },
+    { name: 'Beyoncé',        genre: 'Pop / R&B',   itunesArtistId: 1419227,   region: 'Houston, TX',        hint: 'Ex-girl-group leader who turned into a one-woman institution' },
+    { name: 'Drake',          genre: 'Hip-Hop',     itunesArtistId: 271256,    region: 'Toronto, ON',        hint: 'Teen soap actor who became the streaming era’s default number one' },
+    { name: 'Adele',          genre: 'Soul / Pop',  itunesArtistId: 262836961, region: 'Tottenham, London',  hint: 'Names each album after her age and makes the whole planet cry' },
+    { name: 'Elton John',     genre: 'Rock / Pop',  itunesArtistId: 54657,     region: 'Pinner, England',    hint: 'Piano, glitter glasses, and a farewell tour that ran for years' },
   ],
   2: [
-    { name: 'SZA',                 genre: 'Alt-R&B',       itunesArtistId: 605800394,  region: 'Maplewood, NJ',  hint: 'TDE’s first lady, turning heartbreak into diamond plaques' },
-    { name: 'Post Malone',         genre: 'Pop-Rap',       itunesArtistId: 966309175,  region: 'Grapevine, TX',  hint: 'Face tattoos, a country pivot, and a beer sponsorship' },
-    { name: 'Doja Cat',            genre: 'Pop-Rap',       itunesArtistId: 830588310,  region: 'Los Angeles, CA', hint: 'Went viral as a cartoon cow, stayed for the pop domination' },
-    { name: '21 Savage',           genre: 'Trap',          itunesArtistId: 894820464,  region: 'Atlanta, GA',    hint: 'Deadpan menace over icy Metro Boomin drums' },
-    { name: 'Future',              genre: 'Trap',          itunesArtistId: 128050210,  region: 'Atlanta, GA',    hint: 'Wrote the blueprint for melodic, codeine-soaked heartbreak' },
-    { name: 'Megan Thee Stallion', genre: 'Southern Rap',  itunesArtistId: 1258989914, region: 'Houston, TX',    hint: 'Hot Girl Summer, with a college degree to match' },
-    { name: 'Metro Boomin',        genre: 'Trap',          itunesArtistId: 670534462,  region: 'St. Louis, MO',  hint: 'If Young Metro don’t trust you — the producer tag heard round the world' },
-    { name: 'Don Toliver',         genre: 'Melodic Trap',  itunesArtistId: 1237012992, region: 'Houston, TX',    hint: 'Cactus Jack’s woozy crooner with the helium hooks' },
+    { name: 'Coldplay',               genre: 'Alt-Rock',    itunesArtistId: 471744,     region: 'London, England',     hint: 'Stadium-sized melancholy and roughly a ton of confetti per show' },
+    { name: 'Bruno Mars',             genre: 'Pop / Funk',  itunesArtistId: 278873078,  region: 'Honolulu, HI',        hint: 'Pompadour, silk suit, and a retro-funk smash with a British producer' },
+    { name: 'The Weeknd',             genre: 'R&B / Pop',   itunesArtistId: 479756766,  region: 'Toronto, ON',         hint: 'Uploaded songs anonymously to a blog, ended up headlining the Super Bowl' },
+    { name: 'Billie Eilish',          genre: 'Alt-Pop',     itunesArtistId: 1065981054, region: 'Highland Park, LA',    hint: 'Recorded a chart-topping debut in her brother’s bedroom, barely above a whisper' },
+    { name: 'Kendrick Lamar',         genre: 'Hip-Hop',     itunesArtistId: 368183298,  region: 'Compton, CA',         hint: 'Has a Pulitzer on the shelf and still enters every GOAT debate' },
+    { name: 'Dua Lipa',               genre: 'Dance-Pop',   itunesArtistId: 1031397873, region: 'London, England',     hint: 'Disco-revival hooks and a strict set of "new rules" for the dancefloor' },
+    { name: 'Luke Combs',             genre: 'Country',     itunesArtistId: 815635315,  region: 'Asheville, NC',       hint: 'Everyman in a ballcap moving arena country by the truckload' },
+    { name: 'Red Hot Chili Peppers',  genre: 'Funk Rock',   itunesArtistId: 889780,     region: 'Los Angeles, CA',     hint: 'Funk-rock lifers who have performed wearing little more than a strategically placed sock' },
   ],
   3: [
-    { name: 'Tyler, The Creator', genre: 'Alt-Rap',         itunesArtistId: 420368335,  region: 'Ladera Heights, CA', hint: 'Odd Future ringleader who traded shock raps for pastel suits' },
-    { name: 'JID',                genre: 'Rap',             itunesArtistId: 282841404,  region: 'East Atlanta, GA',  hint: 'Dreamville’s smallest guy with the most syllables per bar' },
-    { name: 'Kali Uchis',         genre: 'Alt-R&B',         itunesArtistId: 894731301,  region: 'Alexandria, VA',    hint: 'Bilingual retro-soul with Colombiana glamour' },
-    { name: 'Vince Staples',      genre: 'West Coast Rap',  itunesArtistId: 566639154,  region: 'Long Beach, CA',    hint: 'Deadpan comic timing over knocking Def Jam beats' },
-    { name: 'Denzel Curry',       genre: 'Rap',             itunesArtistId: 631440154,  region: 'Carol City, FL',    hint: 'Carol City’s punk-rap live wire — ultimate energy' },
-    { name: 'Cordae',             genre: 'Rap',             itunesArtistId: 1384072011, region: 'Raleigh, NC',       hint: 'The kid from the YBN crew who out-lyricised the label' },
-    { name: 'Baby Keem',          genre: 'Experimental Rap', itunesArtistId: 1413572916, region: 'Las Vegas, NV',    hint: 'Cousin of a certain Pulitzer winner — "top of the morning"' },
-    { name: 'Isaiah Rashad',      genre: 'Southern Rap',    itunesArtistId: 605391263,  region: 'Chattanooga, TN',   hint: 'TDE’s laid-back Southern soul, always a little sleepy' },
+    { name: 'Tame Impala',        genre: 'Psych-Pop',   itunesArtistId: 290242959,  region: 'Perth, Australia',   hint: 'Essentially one guy in a home studio drowning everything in phaser' },
+    { name: 'Lana Del Rey',       genre: 'Indie Pop',   itunesArtistId: 464296584,  region: 'Lake Placid, NY',    hint: 'Cinematic Americana melancholy, sad girl in a flower crown' },
+    { name: 'Zach Bryan',         genre: 'Country',     itunesArtistId: 1436413980, region: 'Oologah, OK',        hint: 'Navy vet who blew up posting raw acoustic songs from his phone' },
+    { name: 'Calvin Harris',      genre: 'EDM',         itunesArtistId: 201955086,  region: 'Dumfries, Scotland', hint: 'Stacked supermarket shelves before becoming the highest-paid DJ alive' },
+    { name: 'Arctic Monkeys',     genre: 'Indie Rock',  itunesArtistId: 62820413,   region: 'Sheffield, England', hint: 'Went from the fastest-selling UK debut ever to crooning in a space-age lounge' },
+    { name: 'Hozier',             genre: 'Indie Soul',  itunesArtistId: 342260741,  region: 'Bray, Ireland',      hint: 'Booming baritone and church-organ blues; wants to be taken to a big chorus' },
+    { name: 'Kacey Musgraves',    genre: 'Country / Pop', itunesArtistId: 466044182, region: 'Golden, TX',        hint: 'Rhinestones with a psychedelic streak — country for people who say they hate country' },
+    { name: 'Tyler, The Creator', genre: 'Alt-Rap',     itunesArtistId: 420368335,  region: 'Ladera Heights, CA', hint: 'Odd Future ringleader who swapped shock raps for pastel suits' },
   ],
   4: [
-    { name: 'Saba',              genre: 'Hip-Hop',         itunesArtistId: 1140260329, region: 'West Side, Chicago', hint: 'PIVOT Gang founder who made grief sound gorgeous' },
-    { name: 'Ari Lennox',        genre: 'Neo-Soul',        itunesArtistId: 448854570,  region: 'Washington, DC',     hint: 'Dreamville’s velvet-voiced Shea Butter Baby' },
-    { name: 'EARTHGANG',         genre: 'Psychedelic Rap', itunesArtistId: 883745032,  region: 'Atlanta, GA',        hint: 'Dreamville duo forever compared to a certain ATL legend pair' },
-    { name: 'Little Simz',       genre: 'UK Rap',          itunesArtistId: 627674564,  region: 'Islington, London',  hint: 'Self-described introvert with a full orchestra behind her' },
-    { name: 'Freddie Gibbs',     genre: 'Gangsta Rap',     itunesArtistId: 302166615,  region: 'Gary, IN',           hint: 'Gangsta-rap technician who makes albums with Madlib and Alchemist' },
-    { name: 'Joey Bada$$',       genre: 'Boom Bap',        itunesArtistId: 577261450,  region: 'Brooklyn, NY',       hint: 'Pro Era kid who raps like it’s still 1995' },
-    { name: 'Mick Jenkins',      genre: 'Jazz-Rap',        itunesArtistId: 885270234,  region: 'Chicago, IL',        hint: 'Spoken-word cadence, jazz-soaked beats, lots of water metaphors' },
-    { name: 'Benny the Butcher', genre: 'Boom Bap',        itunesArtistId: 1281676587, region: 'Buffalo, NY',        hint: 'Griselda’s coke-rap closer in a fur coat' },
+    { name: 'Mac DeMarco',                    genre: 'Indie',          itunesArtistId: 501437762,  region: 'Edmonton, Canada',   hint: 'Gap-toothed slacker jangle-pop, a pack of cheap cigarettes always nearby' },
+    { name: 'Phoebe Bridgers',                genre: 'Indie Folk',     itunesArtistId: 697833299,  region: 'Pasadena, CA',       hint: 'Skeleton onesie, whisper-to-scream endings, one third of a supergroup' },
+    { name: 'KAYTRANADA',                     genre: 'House / Funk',   itunesArtistId: 602382713,  region: 'Montreal, Canada',   hint: 'Haitian-Canadian beatmaker bending house and funk slightly off the grid' },
+    { name: 'King Gizzard & The Lizard Wizard', genre: 'Psych Rock',   itunesArtistId: 440629621,  region: 'Melbourne, Australia', hint: 'Aussie band that once released five albums in a year, one of them microtonal' },
+    { name: 'Sturgill Simpson',               genre: 'Outlaw Country', itunesArtistId: 569539832,  region: 'Jackson, KY',        hint: 'Country traditionalist who covers Nirvana and feuds with the industry' },
+    { name: 'Big Thief',                      genre: 'Indie Folk',     itunesArtistId: 1083255351, region: 'Brooklyn, NY',       hint: 'Ragged, intimate folk-rock built around one singular songwriter' },
+    { name: 'Little Simz',                    genre: 'UK Rap',         itunesArtistId: 627674564,  region: 'Islington, London',  hint: 'Self-described introvert with a full orchestra behind her' },
+    { name: 'Caroline Polachek',              genre: 'Art Pop',        itunesArtistId: 385592090,  region: 'Greenwich, CT',      hint: 'Ex-Chairlift singer doing gymnastic, keening avant-pop' },
   ],
   5: [
-    { name: 'Mavi',       genre: 'Abstract Hip-Hop', itunesArtistId: 1195625355, region: 'Charlotte, NC',            hint: 'Pre-med brain, philosophy-heavy pen, allergic to a wasted bar' },
-    { name: 'redveil',    genre: 'Alt-Hip-Hop',      itunesArtistId: 1470333896, region: "Prince George's County, MD", hint: 'Made a full project in his bedroom before he could legally drive' },
-    { name: 'Navy Blue',  genre: 'Soulful Hip-Hop',  itunesArtistId: 1490188561, region: 'Los Angeles, CA',          hint: 'Pro skater and Earl affiliate, permanently introspective' },
-    { name: 'Maxo',       genre: 'Lo-Fi Hip-Hop',    itunesArtistId: 1439454983, region: 'Los Angeles, CA',          hint: 'Def Jam signee who mostly seems to want to be left alone' },
-    { name: 'Liv.e',      genre: 'Alt-R&B',          itunesArtistId: 1492448432, region: 'Dallas, TX',               hint: 'Woozy lo-fi R&B that sounds like a warped cassette' },
-    { name: 'Pink Siifu', genre: 'Experimental',     itunesArtistId: 1087355934, region: 'Birmingham, AL',           hint: 'Swings from ambient soul to full noise-punk screaming, same album' },
-    { name: 'AKAI SOLO',  genre: 'Abstract Hip-Hop', itunesArtistId: 1083661855, region: 'Brooklyn, NY',             hint: 'Stream-of-consciousness flurries, Backwoodz-adjacent' },
-    { name: 'MIKE',       genre: 'Ambient Hip-Hop',  itunesArtistId: 1253023714, region: 'The Bronx, NY',            hint: 'sLUms collective, foggy loops, mumbled wisdom, self-produced as dj blackpower' },
+    { name: 'black midi',       genre: 'Experimental Rock', itunesArtistId: 1265994913, region: 'London, England',     hint: 'Math-rock chaos and jazz-school chops, vocals between a yelp and a sermon' },
+    { name: 'Yaeji',            genre: 'House',             itunesArtistId: 1087249836, region: 'Queens, NY',          hint: 'Half-whispered bilingual house music made for 4am in Koreatown' },
+    { name: 'MJ Lenderman',     genre: 'Alt-Country',       itunesArtistId: 1247728627, region: 'Asheville, NC',       hint: 'Wry Southern slacker-rock; also plays guitar in Wednesday' },
+    { name: 'SAULT',            genre: 'Soul / Funk',       itunesArtistId: 771396456,  region: 'London, England',     hint: 'Anonymous collective that drops surprise albums, sometimes free, then vanishes' },
+    { name: 'Floating Points',  genre: 'Electronic',        itunesArtistId: 311514259,  region: 'Manchester, England', hint: 'Trained neuroscientist who made an album with a spiritual-jazz saxophone legend' },
+    { name: 'Nilüfer Yanya',    genre: 'Indie Rock',        itunesArtistId: 1102497241, region: 'London, England',     hint: 'Scratchy guitar, a saxophone, and a voice stuck happily between genres' },
+    { name: 'Aphex Twin',       genre: 'IDM',               itunesArtistId: 39883194,   region: 'Limerick, Ireland',   hint: 'That unsettling grin logo; drill-’n’-bass conjured somewhere in rural Cornwall' },
+    { name: 'billy woods',      genre: 'Abstract Hip-Hop',  itunesArtistId: 18117504,   region: 'New York, NY',        hint: 'Never shows his face in photos, runs Backwoodz, one half of Armand Hammer' },
   ],
   6: [
-    { name: 'billy woods',     genre: 'Abstract Hip-Hop',     itunesArtistId: 18117504,   region: 'New York, NY',    hint: 'Never shows his face in photos, runs Backwoodz, one half of Armand Hammer' },
-    { name: 'Mach-Hommy',      genre: 'Experimental Rap',      itunesArtistId: 768292263,  region: 'Newark, NJ',      hint: 'Sells records for hundreds of dollars and performs in a bandana mask' },
-    { name: 'Quelle Chris',    genre: 'Left-Field Hip-Hop',   itunesArtistId: 470208519,  region: 'Detroit, MI',     hint: 'Deadpan surrealist who produces his own off-kilter beats' },
-    { name: 'Fatboi Sharif',   genre: 'Experimental Hip-Hop', itunesArtistId: 1406017945, region: 'Rahway, NJ',      hint: 'Horrorcore art-rap — like a haunted house pressed to wax' },
-    { name: 'R.A.P. Ferreira', genre: 'Jazz-Rap',             itunesArtistId: 1466149994, region: 'Biddeford, ME',   hint: 'Formerly recorded under a one-word name — jazz-rap koans for lit majors' },
-    { name: 'Ka',              genre: 'Hardcore Hip-Hop',     itunesArtistId: 1016140666, region: 'Brownsville, NY',  hint: 'Was a captain in the FDNY by day, monk-like coke-rap poet by night' },
-    { name: 'Lojii',           genre: 'Lo-Fi Hip-Hop',        itunesArtistId: 1112271796, region: 'Philadelphia, PA', hint: 'Lo-fi loosie raps, blunted and low-key' },
+    { name: 'Duster',            genre: 'Slowcore',              itunesArtistId: 47720654,   region: 'San Jose, CA',       hint: '’90s basement four-track haze that teenagers rediscovered on TikTok decades later' },
+    { name: 'Alice Coltrane',    genre: 'Spiritual Jazz',        itunesArtistId: 72553,      region: 'Detroit, MI',        hint: 'Harp, Wurlitzer and Vedic devotion; married to a saxophone titan' },
+    { name: 'Jlin',              genre: 'Footwork',              itunesArtistId: 978807589,  region: 'Gary, IN',           hint: 'Ex–steel mill worker building brutalist rhythm puzzles out of Chicago footwork' },
+    { name: 'Broadcast',         genre: 'Experimental Pop',      itunesArtistId: 39790546,   region: 'Birmingham, England', hint: 'Hauntological retro-futurism fronted by the late Trish Keenan' },
+    { name: 'Ka',                genre: 'Hip-Hop',               itunesArtistId: 1016140666, region: 'Brownsville, NY',     hint: 'Was a captain in the FDNY by day, monk-like coke-rap poet by night' },
+    { name: 'Fievel Is Glauque', genre: 'Jazz-Pop',              itunesArtistId: 1550180814, region: 'Brussels / NYC',      hint: 'Two-minute songs that cram a whole jazz record’s worth of chord changes' },
+    { name: 'Loraine James',     genre: 'Experimental Electronic', itunesArtistId: 1368596163, region: 'London, England',   hint: 'Fractured, tender club music from the glitchy end of the spectrum' },
+    { name: 'Sweet Trip',        genre: 'Shoegaze / IDM',        itunesArtistId: 6949189,    region: 'San Francisco, CA',   hint: 'A glitch-flecked dream-pop cult record the internet caught up to 20 years late' },
   ],
 };
 
