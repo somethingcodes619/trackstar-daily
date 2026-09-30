@@ -186,9 +186,14 @@ async function applyProgress({ date, tier, correct, earned, playCount, playerId,
   }
 
   const summaryDoc = { name: nameClean, ...summary, updatedAt: new Date().toISOString() };
+  // Two requests can finish out of the order they were sent in (the one
+  // sent first isn't guaranteed to be the one that *completes* first), so
+  // a plain overwrite here could let an older, less-complete summary land
+  // after — and clobber — a newer one. Guard with a monotonic rank so a
+  // write can only ever move a day's stored progress forward, never back.
   await Promise.all([
-    results.setJSON(`${date}/${playerId}`, summaryDoc),
-    history.setJSON(`${playerId}/${date}`, summaryDoc),
+    writeIfProgressed(results, `${date}/${playerId}`, summaryDoc),
+    writeIfProgressed(history, `${playerId}/${date}`, summaryDoc),
   ]);
 
   if (write.modified && summary.finished) {
@@ -221,6 +226,21 @@ async function deriveSummary(rounds, date, playerId) {
   const byTier = {};
   for (const [tier, doc] of entries) if (doc) byTier[tier] = doc;
   return summarizeDay(byTier);
+}
+
+// A day's progress only ever moves forward: more tiers cleared, or cleared
+// ranking above not-yet-finished. Rank the doc on that scale and skip the
+// write if it wouldn't advance the stored value — the guard against two
+// concurrent requests' writes landing out of order and the later (but
+// staler-computed) one clobbering the more-complete one.
+function progressRank(doc) {
+  return (doc.tierReached || 0) * 2 + (doc.finished ? 1 : 0);
+}
+async function writeIfProgressed(blobStore, key, doc) {
+  let existing = null;
+  try { existing = await blobStore.get(key, { type: 'json' }); } catch (_) { /* treat as absent */ }
+  if (existing && progressRank(existing) > progressRank(doc)) return; // would regress — skip
+  await blobStore.setJSON(key, doc);
 }
 
 function resp(statusCode, body) {
