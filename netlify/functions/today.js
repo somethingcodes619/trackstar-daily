@@ -160,6 +160,16 @@ exports.handler = async (event) => {
   // since that would leak one player's progress to every other viewer.
   const alreadyPlayed = await lookupAlreadyPlayed(event, date, qp.playerId);
   const body = alreadyPlayed ? { ...payload, alreadyPlayed } : payload;
+  if (qp.debug === '1' && isValidPlayerId(qp.playerId)) {
+    try {
+      connectLambda(event);
+      const r = store('rounds');
+      const { blobs } = await r.list({ prefix: `${date}/${qp.playerId}/` });
+      const roundDocs = {};
+      for (const b of blobs) roundDocs[b.key] = await r.get(b.key, { type: 'json' });
+      body.__debug = { roundKeys: blobs.map((b) => b.key), roundDocs };
+    } catch (e) { body.__debug = { err: String((e && e.stack) || e) }; }
+  }
 
   // Any request carrying a playerId must never be cached — by a CDN *or*
   // by the requesting browser itself — even on a run where alreadyPlayed
