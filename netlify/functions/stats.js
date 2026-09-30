@@ -4,8 +4,8 @@
 // weekly scores, and the tier-reached distribution — all derived from
 // what guess.js has actually persisted for them.
 
-const { connectLambda, getStore } = require('@netlify/blobs');
-const { isValidPlayerId, utcDate, blankPlayer } = require('./lib/players');
+const { connectLambda } = require('@netlify/blobs');
+const { store, isValidPlayerId, utcDate, blankPlayer } = require('./lib/players');
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -17,8 +17,8 @@ exports.handler = async (event) => {
 
   try {
     connectLambda(event);
-    const players = getStore('players');
-    const history = getStore('history');
+    const players = store('players');
+    const history = store('history');
 
     const player = (await players.get(playerId, { type: 'json' })) || blankPlayer();
 

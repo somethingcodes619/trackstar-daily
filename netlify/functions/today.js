@@ -7,9 +7,9 @@
 // (public, no key, 30-second preview + artwork). The artist name is never
 // returned — guessing is validated server-side in guess.js.
 
-const { connectLambda, getStore } = require('@netlify/blobs');
+const { connectLambda } = require('@netlify/blobs');
 const { POOL, TIERS, pickArtist, dropNumber, seededShuffle } = require('./lib/schedule');
-const { isValidPlayerId } = require('./lib/players');
+const { store, isValidPlayerId } = require('./lib/players');
 
 // Node 18+ (Netlify default) ships a global fetch; fall back to node-fetch locally.
 const fetch = globalThis.fetch
@@ -173,7 +173,7 @@ async function lookupAlreadyPlayed(event, date, playerId) {
   if (!isValidPlayerId(playerId)) return null;
   try {
     connectLambda(event);
-    const progress = await getStore('results').get(`${date}/${playerId}`, { type: 'json' });
+    const progress = await store('results').get(`${date}/${playerId}`, { type: 'json' });
     if (!progress || !progress.finished) return null;
     return { score: progress.score, tierReached: progress.tierReached, cleared: progress.cleared };
   } catch (_) {

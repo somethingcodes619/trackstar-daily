@@ -2,6 +2,18 @@
 // Small shared helpers for the persistence layer (Netlify Blobs).
 // Lives in a subdirectory, so Netlify does NOT treat it as a function.
 
+const { getStore } = require('@netlify/blobs');
+
+// Every store here is a read-modify-write state machine (scores, streaks,
+// "have they already played today") — not a cache. @netlify/blobs defaults
+// to eventually-consistent reads, which is exactly wrong for that: two
+// guesses submitted moments apart can otherwise race, the second one reads
+// a stale "nothing scored yet" and gets treated as out-of-order, and the
+// round silently never gets persisted. Force strong consistency everywhere.
+function store(name) {
+  return getStore({ name, consistency: 'strong' });
+}
+
 const ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 
 // Player IDs are client-generated (crypto.randomUUID()) — just check the
@@ -50,4 +62,4 @@ function blankPlayer(name) {
   };
 }
 
-module.exports = { isValidPlayerId, sanitizeName, utcDate, shiftDate, blankPlayer };
+module.exports = { store, isValidPlayerId, sanitizeName, utcDate, shiftDate, blankPlayer };

@@ -3,8 +3,8 @@
 // Real scores, pulled from what guess.js has actually persisted — no mock
 // data. Falls back to an empty board (never fake names) if Blobs is down.
 
-const { connectLambda, getStore } = require('@netlify/blobs');
-const { utcDate } = require('./lib/players');
+const { connectLambda } = require('@netlify/blobs');
+const { store, utcDate } = require('./lib/players');
 
 const TODAY_SCORE_LIMIT = 200;  // bound how many of today's results we'll fetch
 const STREAK_LEADER_LIMIT = 200; // bound how many players we'll scan for streaks
@@ -15,8 +15,8 @@ exports.handler = async (event) => {
 
   try {
     connectLambda(event);
-    const results = getStore('results');
-    const players = getStore('players');
+    const results = store('results');
+    const players = store('players');
 
     const { blobs } = await results.list({ prefix: `${date}/` });
     const todayKeys = blobs.slice(0, TODAY_SCORE_LIMIT).map((b) => b.key);

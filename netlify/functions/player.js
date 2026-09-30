@@ -4,8 +4,8 @@
 // a `players/{playerId}` record exists before they've played anything, and
 // again whenever they change their display name.
 
-const { connectLambda, getStore } = require('@netlify/blobs');
-const { isValidPlayerId, sanitizeName, blankPlayer } = require('./lib/players');
+const { connectLambda } = require('@netlify/blobs');
+const { store, isValidPlayerId, sanitizeName, blankPlayer } = require('./lib/players');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -26,7 +26,7 @@ exports.handler = async (event) => {
 
   try {
     connectLambda(event);
-    const players = getStore('players');
+    const players = store('players');
     const existing = await players.get(playerId, { type: 'json' });
     const updated = existing
       ? { ...existing, name: sanitizeName(name) }

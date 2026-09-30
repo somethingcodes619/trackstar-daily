@@ -11,9 +11,9 @@
 // in order — the client never gets to hand over a final score. See
 // applyProgress() below.
 
-const { connectLambda, getStore } = require('@netlify/blobs');
+const { connectLambda } = require('@netlify/blobs');
 const { POOL, pickArtist, scoreFor } = require('./lib/schedule');
-const { isValidPlayerId, sanitizeName, shiftDate, blankPlayer } = require('./lib/players');
+const { store, isValidPlayerId, sanitizeName, shiftDate, blankPlayer } = require('./lib/players');
 
 // Case / space / punctuation insensitive matching.
 function normalize(str) {
@@ -145,9 +145,9 @@ exports.handler = async (event) => {
 // from the client except which round this is and whether it was correct,
 // both of which were just independently verified above.
 async function applyProgress({ date, tier, correct, earned, playerId, name }) {
-  const results = getStore('results');
-  const history = getStore('history');
-  const players = getStore('players');
+  const results = store('results');
+  const history = store('history');
+  const players = store('players');
 
   const key = `${date}/${playerId}`;
   const existing = await results.get(key, { type: 'json' });
