@@ -18,7 +18,29 @@ const fetch = globalThis.fetch
 // iTunes helpers
 // ─────────────────────────────────────────────────────
 const norm = (s) => (s || '').toLowerCase().replace(/[\s\-'’.!&,()]/g, '');
-const JUNK = /karaoke|tribute|originally performed|made famous|\binstrumental\b|\blive\b|live at|live from|sped ?up|slowed|nightcore|8d audio|commentary|a ?cappella|cover version|as made famous/i;
+
+// Alternate cuts we never want to surface — these aren't "the song", they're
+// a different version of it (a DJ remix, a sped-up TikTok edit, etc.).
+const JUNK = /karaoke|tribute|originally performed|made famous|\binstrumental\b|\blive\b|live at|live from|sped ?up|slowed|nightcore|8d audio|commentary|a ?cappella|cover version|as made famous|\bremix(es)?\b|\bmashup\b|\bvip mix\b|\bextended mix\b|\bacoustic\b|\bdemo\b|\brework\b|\bbootleg\b/i;
+
+// Strip a trailing parenthetical/bracketed qualifier so "Track (2019
+// Remaster)", "Track (Single Version)" and "Track (Clean)" all collapse to
+// the same underlying song — "Track".
+function baseTitle(trackName) {
+  return String(trackName || '').replace(/\s*[([][^)\]]*[)\]]\s*$/, '').trim();
+}
+
+// Given every release of the same song we found, prefer the plainest one —
+// a bare title over any qualified version — so a remaster/edit/alt-version
+// never gets played in place of the version people actually recognize.
+function pickCanonical(versions) {
+  if (versions.length === 1) return versions[0];
+  const plain = versions.find((t) => !/[([]/.test(t.trackName));
+  if (plain) return plain;
+  const remastered = versions.find((t) => /remaster/i.test(t.trackName));
+  if (remastered) return remastered;
+  return [...versions].sort((a, b) => a.trackName.length - b.trackName.length)[0];
+}
 
 async function itunesJson(url) {
   const res = await fetch(url, { headers: { 'User-Agent': 'trackstar-daily/2.0 (daily music quiz)' } });
@@ -26,7 +48,8 @@ async function itunesJson(url) {
   return res.json();
 }
 
-// Every previewable song we can find for an artist, newest catalog first.
+// Every previewable song we can find for an artist, one canonical version
+// per song (see pickCanonical) — no duplicate remasters/remixes/edits.
 async function artistSongs(artist) {
   let results = [];
 
@@ -50,15 +73,26 @@ async function artistSongs(artist) {
   }
 
   const wantName = norm(artist.name);
-  const byKey = new Map();
+  const seenExact = new Set();
+  const candidates = [];
   for (const t of results) {
     if (t.wrapperType !== 'track' || t.kind !== 'song' || !t.previewUrl) continue;
     if (norm(t.artistName) !== wantName) continue;                 // primary artist only
     if (JUNK.test(`${t.trackName} ${t.collectionName || ''}`)) continue;
-    const key = norm(t.trackName);
-    if (!byKey.has(key)) byKey.set(key, t);
+    const exactKey = norm(t.trackName);
+    if (seenExact.has(exactKey)) continue;
+    seenExact.add(exactKey);
+    candidates.push(t);
   }
-  return [...byKey.values()];
+
+  // Collapse every release of the same underlying song into one canonical pick.
+  const bySong = new Map();
+  for (const t of candidates) {
+    const key = norm(baseTitle(t.trackName));
+    if (!bySong.has(key)) bySong.set(key, []);
+    bySong.get(key).push(t);
+  }
+  return [...bySong.values()].map(pickCanonical);
 }
 
 function tidyGenre(g) {
