@@ -4,14 +4,28 @@
 
 const { getStore } = require('@netlify/blobs');
 
-// Every store here is a read-modify-write state machine (scores, streaks,
-// "have they already played today") — not a cache. @netlify/blobs defaults
-// to eventually-consistent reads, which is exactly wrong for that: two
-// guesses submitted moments apart can otherwise race, the second one reads
-// a stale "nothing scored yet" and gets treated as out-of-order, and the
-// round silently never gets persisted. Force strong consistency everywhere.
 function store(name) {
-  return getStore({ name, consistency: 'strong' });
+  return getStore(name);
+}
+
+// Recompute a day's {score, tierReached, finished, cleared} from whatever
+// per-round results are on record, in tier order, stopping at the first
+// missing or wrong tier. This is deliberately a pure derivation with no
+// dependency on write order or timing — see guess.js's applyProgress()
+// for why: each round is written once, idempotently, and this is re-run
+// from scratch after every write rather than carried forward as mutable
+// state, so it can never be corrupted by a stale read racing a write.
+function summarizeDay(roundsByTier) {
+  let score = 0, tierReached = 0, finished = false, cleared = false;
+  for (let tier = 1; tier <= 6; tier++) {
+    const r = roundsByTier[tier];
+    if (!r) break; // nothing on record at/after this tier yet
+    if (!r.correct) { finished = true; break; }
+    score += r.earned || 0;
+    tierReached = tier;
+  }
+  if (tierReached === 6) { finished = true; cleared = true; }
+  return { score, tierReached, finished, cleared };
 }
 
 const ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
@@ -62,4 +76,4 @@ function blankPlayer(name) {
   };
 }
 
-module.exports = { store, isValidPlayerId, sanitizeName, utcDate, shiftDate, blankPlayer };
+module.exports = { store, summarizeDay, isValidPlayerId, sanitizeName, utcDate, shiftDate, blankPlayer };

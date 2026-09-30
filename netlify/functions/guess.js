@@ -13,7 +13,7 @@
 
 const { connectLambda } = require('@netlify/blobs');
 const { POOL, pickArtist, scoreFor } = require('./lib/schedule');
-const { store, isValidPlayerId, sanitizeName, shiftDate, blankPlayer } = require('./lib/players');
+const { store, summarizeDay, isValidPlayerId, sanitizeName, shiftDate, blankPlayer } = require('./lib/players');
 
 // Case / space / punctuation insensitive matching.
 function normalize(str) {
@@ -122,7 +122,7 @@ exports.handler = async (event) => {
   if (isValidPlayerId(playerId)) {
     try {
       connectLambda(event);
-      persisted = await applyProgress({ date, tier, correct, earned, playerId, name });
+      persisted = await applyProgress({ date, tier, correct, earned, playCount: usedPlays, playerId, name });
     } catch (_) {
       // A Blobs hiccup shouldn't block the round from resolving for the
       // player — it just won't be reflected on the leaderboard this time.
@@ -139,64 +139,88 @@ exports.handler = async (event) => {
   });
 };
 
-// Appends one validated round onto the player's day, in order, and — only
-// the instant the day actually finishes — folds it into their lifetime
-// aggregate (streak, best score, tier distribution). Never trusts anything
-// from the client except which round this is and whether it was correct,
-// both of which were just independently verified above.
-async function applyProgress({ date, tier, correct, earned, playerId, name }) {
+// Records one validated round and returns the day's running summary. Never
+// trusts anything from the client except which round this is and whether
+// it was correct — both independently verified above.
+//
+// Design note: this used to be a read-modify-write on one mutable per-day
+// doc ("read current progress, is this the next tier?, append, save").
+// That raced — two guesses submitted close together could both read the
+// state *before* either write landed, so the second one looked "out of
+// order" and was silently dropped. Blobs defaults to eventually-consistent
+// reads, and forcing strong consistency turned out to need an edge URL
+// this runtime doesn't get auto-configured with (it just threw).
+//
+// So instead: each round is written to its own key, once, via an atomic
+// onlyIfNew conditional PUT — no read-before-write, no ordering to race.
+// The day's score/tierReached/finished is then *derived* fresh from
+// whatever rounds are on record, every time — a pure function of durable
+// facts, never mutable state carried forward, so it can't be corrupted by
+// a stale read. See summarizeDay() in lib/players.js.
+async function applyProgress({ date, tier, correct, earned, playCount, playerId, name }) {
+  const rounds = store('rounds');
   const results = store('results');
   const history = store('history');
   const players = store('players');
+  const nameClean = sanitizeName(name);
 
-  const key = `${date}/${playerId}`;
-  const existing = await results.get(key, { type: 'json' });
-  const progress = existing || {
-    name: sanitizeName(name), score: 0, clearedTiers: [], tierReached: 0,
-    finished: false, cleared: false,
-  };
+  const roundKey = `${date}/${playerId}/${tier}`;
+  const write = await rounds.setJSON(
+    roundKey,
+    { correct, earned: correct ? earned : 0, playCount },
+    { onlyIfNew: true }
+  );
+  // write.modified === false means this exact tier was already recorded
+  // for this player+day (a replay) — harmless, we still recompute below,
+  // just won't touch the lifetime aggregate for it again.
 
-  if (progress.finished) return progress; // already resolved — ignore replays
-
-  const expectedTier = progress.clearedTiers.length + 1;
-  if (tier !== expectedTier) return progress; // out of order — ignore, don't score
-
-  progress.name = sanitizeName(name) || progress.name;
-  if (correct) {
-    progress.score += earned;
-    progress.clearedTiers.push(tier);
-    progress.tierReached = tier;
-    if (tier === 6) { progress.finished = true; progress.cleared = true; }
-  } else {
-    progress.finished = true;
-    progress.cleared = false;
+  const shouldHaveFinished = !correct || tier === 6;
+  let summary = await deriveSummary(rounds, date, playerId);
+  // Our own read here can, rarely, still lag our own write by a beat. If
+  // we know this exact round should have ended the day but the freshly
+  // recomputed summary doesn't agree yet, give it a couple of short
+  // retries so the lifetime-aggregate fold-in below isn't skipped.
+  for (let i = 0; i < 3 && shouldHaveFinished && !summary.finished; i++) {
+    await new Promise((r) => setTimeout(r, 200));
+    summary = await deriveSummary(rounds, date, playerId);
   }
-  progress.updatedAt = new Date().toISOString();
 
+  const summaryDoc = { name: nameClean, ...summary, updatedAt: new Date().toISOString() };
   await Promise.all([
-    results.setJSON(key, progress),
-    history.setJSON(`${playerId}/${date}`, progress),
+    results.setJSON(`${date}/${playerId}`, summaryDoc),
+    history.setJSON(`${playerId}/${date}`, summaryDoc),
   ]);
 
-  if (progress.finished) {
-    const player = (await players.get(playerId, { type: 'json' })) || blankPlayer(progress.name);
+  if (write.modified && summary.finished) {
+    const player = (await players.get(playerId, { type: 'json' })) || blankPlayer(nameClean);
     const yesterday = shiftDate(date, -1);
     player.currentStreak = player.lastPlayedDate === yesterday ? player.currentStreak + 1
       : player.lastPlayedDate === date ? player.currentStreak
       : 1;
     player.bestStreak = Math.max(player.bestStreak, player.currentStreak);
     player.lastPlayedDate = date;
-    player.bestScore = Math.max(player.bestScore, progress.score);
+    player.bestScore = Math.max(player.bestScore, summary.score);
     player.totalPlayed += 1;
-    player.name = progress.name || player.name;
-    if (progress.tierReached >= 1) {
+    player.name = nameClean || player.name;
+    if (summary.tierReached >= 1) {
       player.wins += 1;
-      player.tierCounts[progress.tierReached - 1] = (player.tierCounts[progress.tierReached - 1] || 0) + 1;
+      player.tierCounts[summary.tierReached - 1] = (player.tierCounts[summary.tierReached - 1] || 0) + 1;
     }
     await players.setJSON(playerId, player);
   }
 
-  return progress;
+  return summary;
+}
+
+async function deriveSummary(rounds, date, playerId) {
+  const prefix = `${date}/${playerId}/`;
+  const { blobs } = await rounds.list({ prefix });
+  const entries = await Promise.all(
+    blobs.map(async (b) => [Number(b.key.slice(prefix.length)), await rounds.get(b.key, { type: 'json' })])
+  );
+  const byTier = {};
+  for (const [tier, doc] of entries) if (doc) byTier[tier] = doc;
+  return summarizeDay(byTier);
 }
 
 function resp(statusCode, body) {
