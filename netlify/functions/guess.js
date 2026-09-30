@@ -13,7 +13,7 @@
 
 const { connectLambda } = require('@netlify/blobs');
 const { POOL, pickArtist, scoreFor } = require('./lib/schedule');
-const { store, summarizeFromRounds, isValidPlayerId, sanitizeName, shiftDate, blankPlayer } = require('./lib/players');
+const { store, summarizeFromRounds, isValidPlayerId, sanitizeName } = require('./lib/players');
 
 // Case / space / punctuation insensitive matching.
 function normalize(str) {
@@ -139,11 +139,11 @@ exports.handler = async (event) => {
   });
 };
 
-// Records one validated round and returns the day's running summary. Never
-// trusts anything from the client except which round this is and whether
-// it was correct — both independently verified above.
+// Records one validated round. Never trusts anything from the client
+// except which round this is and whether it was correct — both
+// independently verified above.
 //
-// Design history, because this went through two wrong turns first:
+// Design history, because this went through a few wrong turns first:
 //  1. A read-modify-write on one mutable per-day doc ("read current
 //     progress, is this the next tier?, append, save") raced — two guesses
 //     close together could both read the state *before* either write
@@ -152,67 +152,46 @@ exports.handler = async (event) => {
 //     (this runtime's auto-config has no edge URL for it).
 //  2. Switched each round to its own key, written once via an atomic
 //     onlyIfNew PUT (still true, below) — durable and race-free. But then
-//     a *cached summary* was written back after computing it, and that
-//     write could be computed from a still-converging read and get stuck
-//     forever: nothing ever re-triggers a correction once the day is over
-//     and no more rounds come in for it.
+//     a *cached day summary* was written back after computing it, and
+//     that write could be computed from a still-converging read and get
+//     stuck forever, with nothing to ever re-trigger a correction.
+//  3. Dropped the cached summary too — score/tierReached are now always
+//     recomputed live from the rounds (summarizeFromRounds, lib/players).
+//     But the *lifetime* aggregate (streak, best score) was still a
+//     maintained doc, folded in here the moment a day finished — gated on
+//     a short retry loop waiting for the day to "look" finished. In
+//     production, real convergence for a list() read routinely took much
+//     longer than any synchronous HTTP request can afford to wait for, so
+//     that fold-in essentially never fired: lifetime stats stayed at zero.
 //
-// So: only the per-round facts are durable state. The summary is never
-// cached — summarizeFromRounds() (lib/players.js) recomputes it from
-// scratch on every read, in guess.js, leaderboard.js, stats.js and
-// today.js alike. A read that catches mid-convergence just undercounts
-// *that one read*; the next read gets a fresh chance and is never stuck.
+// So now: this function only ever writes durable, non-conflicting facts —
+// the round itself, and two cheap markers so later reads know where to
+// look. No retries, no "is the day finished yet" decision made here at
+// all. Lifetime stats are derived the same way a day's score is —
+// computePlayerStats() (lib/players.js), called fresh by stats.js and
+// leaderboard.js whenever they're actually needed.
 async function applyProgress({ date, tier, correct, earned, playCount, playerId, name }) {
   const rounds = store('rounds');
   const roster = store('roster');
-  const players = store('players');
+  const playerDays = store('playerDays');
   const nameClean = sanitizeName(name);
 
   const roundKey = `${date}/${playerId}/${tier}`;
-  const write = await rounds.setJSON(
+  await rounds.setJSON(
     roundKey,
     { correct, earned: correct ? earned : 0, playCount },
-    { onlyIfNew: true }
+    { onlyIfNew: true } // first answer for this tier wins; replays are no-ops
   );
-  // write.modified === false means this exact tier was already recorded
-  // for this player+day (a replay) — harmless, we still recompute below,
-  // just won't touch the lifetime aggregate for it again.
 
-  // Roster entry so leaderboard.js knows this player played today, without
-  // needing a numeric snapshot of their score (that part is always
-  // recomputed live). Safe to just overwrite — it only ever holds a name.
-  await roster.setJSON(`${date}/${playerId}`, { name: nameClean });
+  // Markers only — no numeric snapshot, nothing that can go stale. Both
+  // just say "this player has activity on this date"; the actual score is
+  // always recomputed live from `rounds` by whoever reads it later.
+  await Promise.all([
+    roster.setJSON(`${date}/${playerId}`, { name: nameClean }),
+    playerDays.setJSON(`${playerId}/${date}`, {}, { onlyIfNew: true }),
+  ]);
 
-  const shouldHaveFinished = !correct || tier === 6;
-  let summary = await summarizeFromRounds(rounds, date, playerId);
-  // Best-effort: give a just-finished day a few short retries so the
-  // lifetime-aggregate fold-in below isn't needlessly skipped. If it still
-  // doesn't converge in time, nothing is lost — summarizeFromRounds() will
-  // simply compute correctly on the next read, whenever that happens.
-  for (let i = 0; i < 5 && shouldHaveFinished && !summary.finished; i++) {
-    await new Promise((r) => setTimeout(r, 300));
-    summary = await summarizeFromRounds(rounds, date, playerId);
-  }
-
-  if (write.modified && summary.finished) {
-    const player = (await players.get(playerId, { type: 'json' })) || blankPlayer(nameClean);
-    const yesterday = shiftDate(date, -1);
-    player.currentStreak = player.lastPlayedDate === yesterday ? player.currentStreak + 1
-      : player.lastPlayedDate === date ? player.currentStreak
-      : 1;
-    player.bestStreak = Math.max(player.bestStreak, player.currentStreak);
-    player.lastPlayedDate = date;
-    player.bestScore = Math.max(player.bestScore, summary.score);
-    player.totalPlayed += 1;
-    player.name = nameClean || player.name;
-    if (summary.tierReached >= 1) {
-      player.wins += 1;
-      player.tierCounts[summary.tierReached - 1] = (player.tierCounts[summary.tierReached - 1] || 0) + 1;
-    }
-    await players.setJSON(playerId, player);
-  }
-
-  return summary;
+  return summarizeFromRounds(rounds, date, playerId);
 }
 
 function resp(statusCode, body) {

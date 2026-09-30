@@ -4,10 +4,13 @@
 // data. Falls back to an empty board (never fake names) if Blobs is down.
 
 const { connectLambda } = require('@netlify/blobs');
-const { store, summarizeFromRounds, utcDate } = require('./lib/players');
+const { store, summarizeFromRounds, computePlayerStats, utcDate } = require('./lib/players');
 
 const TODAY_SCORE_LIMIT = 200;  // bound how many of today's players we'll score
-const STREAK_LEADER_LIMIT = 200; // bound how many players we'll scan for streaks
+// Each streak leader needs a full computePlayerStats() — heavier than a
+// single doc read (see lib/players.js) — so this stays modest for now.
+// Fine at today's scale; would need real indexing before it's not.
+const STREAK_LEADER_LIMIT = 40;
 
 exports.handler = async (event) => {
   const qsDate = event && event.queryStringParameters && event.queryStringParameters.date;
@@ -46,9 +49,10 @@ exports.handler = async (event) => {
     const playerKeys = playerBlobs.slice(0, STREAK_LEADER_LIMIT).map((b) => b.key);
     const playerDocs = await Promise.all(playerKeys.map((k) => players.get(k, { type: 'json' })));
 
-    const streaks = playerDocs
-      .filter(Boolean)
-      .map((d, i) => ({ playerId: playerKeys[i], name: d.name || 'Guest', currentStreak: d.currentStreak || 0 }))
+    const streaks = (await Promise.all(playerKeys.map(async (playerId, i) => {
+      const { currentStreak } = await computePlayerStats(playerId);
+      return { playerId, name: (playerDocs[i] && playerDocs[i].name) || 'Guest', currentStreak };
+    })))
       .filter((s) => s.currentStreak > 0)
       .sort((a, b) => b.currentStreak - a.currentStreak)
       .slice(0, 5);

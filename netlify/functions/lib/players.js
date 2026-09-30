@@ -81,18 +81,65 @@ function shiftDate(dateStr, offsetDays) {
   return d.toISOString().slice(0, 10);
 }
 
-// Default shape for a brand-new player's aggregate record.
-function blankPlayer(name) {
-  return {
-    name: sanitizeName(name),
-    currentStreak: 0,
-    bestStreak: 0,
-    lastPlayedDate: null,
-    bestScore: 0,
-    totalPlayed: 0,
-    wins: 0,
-    tierCounts: [0, 0, 0, 0, 0, 0], // index 0..5 -> highest tier cleared 1..6
-  };
+const BLANK_STATS = {
+  currentStreak: 0, bestStreak: 0, bestScore: 0, totalPlayed: 0, wins: 0,
+  tierCounts: [0, 0, 0, 0, 0, 0], // index 0..5 -> highest tier cleared 1..6
+};
+
+// A player's lifetime stats — streak, best score, tier distribution — are
+// derived the same way a single day's score is: read the durable facts,
+// compute fresh, never trust a pre-written snapshot. An earlier version
+// tried to maintain this as a running total in a `players` doc, updated
+// the moment a day finished. In production that update needed to read
+// back "did this day actually finish", and real Blobs list()/get()
+// convergence turned out to routinely take much longer than any
+// synchronous HTTP request can afford to retry for — so the fold-in
+// almost never fired, and lifetime stats just silently stayed at zero.
+//
+// `playerDays/{playerId}/{date}` is a cheap marker (written once per day
+// played, see guess.js) that lets this enumerate which dates to look at
+// without scanning the whole `rounds` store. Each of those days' actual
+// score/tierReached is then recomputed via summarizeFromRounds(), exactly
+// as leaderboard.js and today.js already do.
+async function computePlayerStats(playerId, { maxDays = 400 } = {}) {
+  const days = store('playerDays');
+  const rounds = store('rounds');
+
+  const prefix = `${playerId}/`;
+  const { blobs } = await days.list({ prefix });
+  const dates = blobs.map((b) => b.key.slice(prefix.length)).sort().slice(-maxDays);
+
+  const summaries = await Promise.all(dates.map((d) => summarizeFromRounds(rounds, d, playerId)));
+  const finished = dates
+    .map((date, i) => ({ date, summary: summaries[i] }))
+    .filter((x) => x.summary.finished);
+
+  const stats = { ...BLANK_STATS, tierCounts: [0, 0, 0, 0, 0, 0] };
+  stats.totalPlayed = finished.length;
+  for (const { summary } of finished) {
+    stats.bestScore = Math.max(stats.bestScore, summary.score);
+    if (summary.tierReached >= 1) {
+      stats.wins += 1;
+      stats.tierCounts[summary.tierReached - 1] += 1;
+    }
+  }
+
+  const finishedDates = new Set(finished.map((x) => x.date));
+  let cursor = utcDate(0);
+  if (!finishedDates.has(cursor)) cursor = shiftDate(cursor, -1); // today not finished yet still counts yesterday's streak
+  while (finishedDates.has(cursor)) { stats.currentStreak += 1; cursor = shiftDate(cursor, -1); }
+
+  let run = 0, prev = null;
+  for (const d of [...finishedDates].sort()) {
+    run = prev && shiftDate(prev, 1) === d ? run + 1 : 1;
+    stats.bestStreak = Math.max(stats.bestStreak, run);
+    prev = d;
+  }
+
+  return stats;
 }
 
-module.exports = { store, summarizeDay, summarizeFromRounds, isValidPlayerId, sanitizeName, utcDate, shiftDate, blankPlayer };
+module.exports = {
+  store, summarizeDay, summarizeFromRounds, computePlayerStats,
+  isValidPlayerId, sanitizeName, utcDate, shiftDate,
+};

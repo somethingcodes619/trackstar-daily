@@ -1,11 +1,12 @@
 // netlify/functions/stats.js
 // GET /.netlify/functions/stats?playerId=...
 // A player's real history — streak, best score, win rate, last 7 days,
-// weekly scores, and the tier-reached distribution — all derived from
-// what guess.js has actually persisted for them.
+// weekly scores, and the tier-reached distribution — all derived live from
+// what guess.js has actually persisted for them. Nothing here is a cached
+// snapshot; see computePlayerStats() in lib/players.js for why.
 
 const { connectLambda } = require('@netlify/blobs');
-const { store, summarizeFromRounds, isValidPlayerId, utcDate, blankPlayer } = require('./lib/players');
+const { store, summarizeFromRounds, computePlayerStats, isValidPlayerId, utcDate } = require('./lib/players');
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -17,14 +18,11 @@ exports.handler = async (event) => {
 
   try {
     connectLambda(event);
-    const players = store('players');
     const rounds = store('rounds');
 
-    const player = (await players.get(playerId, { type: 'json' })) || blankPlayer();
+    const nameDoc = await store('players').get(playerId, { type: 'json' });
 
-    // Last 7 calendar days (UTC), oldest first, today last. Each day's
-    // score is recomputed live from `rounds` (see summarizeFromRounds in
-    // lib/players.js) — never a cached snapshot, so it can't get stuck.
+    // Last 7 calendar days (UTC), oldest first, today last.
     const dates = [-6, -5, -4, -3, -2, -1, 0].map((off) => utcDate(off));
     const daySummaries = await Promise.all(dates.map((d) => summarizeFromRounds(rounds, d, playerId)));
 
@@ -42,21 +40,25 @@ exports.handler = async (event) => {
       };
     });
 
-    const winRate = player.totalPlayed ? Math.round((player.wins / player.totalPlayed) * 100) : 0;
+    const lifetime = await computePlayerStats(playerId);
+    const winRate = lifetime.totalPlayed ? Math.round((lifetime.wins / lifetime.totalPlayed) * 100) : 0;
 
     return resp(200, {
-      name: player.name,
-      currentStreak: player.currentStreak,
-      bestStreak: player.bestStreak,
-      totalPlayed: player.totalPlayed,
+      name: (nameDoc && nameDoc.name) || 'Guest',
+      currentStreak: lifetime.currentStreak,
+      bestStreak: lifetime.bestStreak,
+      totalPlayed: lifetime.totalPlayed,
       winRate,
-      bestScore: player.bestScore,
-      tierCounts: player.tierCounts,
+      bestScore: lifetime.bestScore,
+      tierCounts: lifetime.tierCounts,
       last7,
       weeklyScores: last7.map((d) => ({ label: d.label, score: d.score || 0 })),
     });
   } catch (err) {
-    return resp(200, { error: String(err), ...blankPlayer(), winRate: 0, tierCounts: [0, 0, 0, 0, 0, 0], last7: [], weeklyScores: [] });
+    return resp(200, {
+      error: String(err), name: 'Guest', currentStreak: 0, bestStreak: 0, totalPlayed: 0,
+      winRate: 0, bestScore: 0, tierCounts: [0, 0, 0, 0, 0, 0], last7: [], weeklyScores: [],
+    });
   }
 };
 
