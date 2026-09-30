@@ -92,6 +92,22 @@ const TIERS = {
   6: 'Scholar level',
 };
 
+// Scoring — the authoritative copy lives here (server-side) so a client
+// can't just hand guess.js an arbitrary point value. index.html keeps its
+// own copy of POINTS/PLAY_MULT for instant UI feedback, but the score that
+// actually gets saved always comes from what guess.js computes and returns.
+const POINTS = { 1: 10, 2: 20, 3: 35, 4: 55, 5: 80, 6: 120 };
+const PLAY_MULT = [1.0, 0.7, 0.4]; // indexed by (playCount - 1), clamped to 1-3
+
+function scoreFor(tier, playCount) {
+  // Only trust playCount if it's already a valid 1-3 integer — clamping an
+  // out-of-range value (e.g. 0) up to 1 would let a client just claim "0
+  // plays used" to always get the best multiplier. Anything invalid falls
+  // back to the worst (least exploitable) multiplier instead.
+  const pc = Number.isInteger(playCount) && playCount >= 1 && playCount <= 3 ? playCount : 3;
+  return { playCount: pc, earned: Math.round((POINTS[tier] || 0) * PLAY_MULT[pc - 1]) };
+}
+
 // Optional manual overrides. Map an ISO date to 6 artist names (tier order).
 // Names must exist in POOL for that tier. Leave empty for a pure random daily.
 const PINNED = {
@@ -161,6 +177,6 @@ function dropNumber(dateStr) {
 }
 
 module.exports = {
-  POOL, TIERS, PINNED,
-  rngFor, seededShuffle, pickArtist, dropNumber,
+  POOL, TIERS, PINNED, POINTS, PLAY_MULT,
+  rngFor, seededShuffle, pickArtist, dropNumber, scoreFor,
 };

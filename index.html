@@ -662,7 +662,7 @@ async function submitGuess() {
   document.getElementById('play-btn').disabled      = true;
   document.getElementById('guess-label').textContent = 'Your answer: ' + val;
 
-  let isCorrect, revealedArtist;
+  let isCorrect, revealedArtist, earnedFromServer;
 
   try {
     const res = await fetch('/.netlify/functions/guess', {
@@ -671,10 +671,11 @@ async function submitGuess() {
       body:    JSON.stringify({ date: new Date().toISOString().split('T')[0], roundIdx, guess: val, playCount }),
     });
     const result = await res.json();
-    isCorrect      = result.correct;
-    revealedArtist = result.artist;
+    isCorrect        = result.correct;
+    revealedArtist   = result.artist;
+    earnedFromServer = result.earned; // authoritative — never trust a client-computed score
   } catch {
-    // Client-side fallback for demo mode
+    // Client-side fallback for demo mode (no server to ask, nothing to cheat)
     const normalize = s => s.toLowerCase().replace(/[\s\-''.!&]/g, '');
     const r = rounds[roundIdx];
     isCorrect      = normalize(val) === normalize(r.artist);
@@ -692,7 +693,11 @@ async function submitGuess() {
   document.getElementById('vinyl-art').classList.add('revealed');
 
   if (isCorrect) {
-    const earned = Math.round(t.basePoints * PLAY_MULT[Math.min(playCount - 1, 2)]);
+    // Prefer the server's number (it's the one that's actually authoritative);
+    // fall back to the local formula only when there was no server to ask.
+    const earned = earnedFromServer !== undefined
+      ? earnedFromServer
+      : Math.round(t.basePoints * PLAY_MULT[Math.min(playCount - 1, 2)]);
     score += earned;
 
     rb.className   = 'result-box win';
@@ -851,10 +856,12 @@ function buildStats() {
    COUNTDOWN
 ══════════════════════════════════════ */
 function updateCountdown() {
-  const now  = new Date();
-  const next = new Date(now);
-  next.setDate(next.getDate() + 1); next.setHours(0,0,0,0);
-  const d   = next - now;
+  // The puzzle rotates at UTC midnight (today.js keys the drop off the UTC
+  // date), so the countdown has to target UTC midnight too — local midnight
+  // would drift by hours in either direction depending on the viewer's timezone.
+  const now     = new Date();
+  const nextUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0);
+  const d       = nextUTC - now.getTime();
   const pad = n => String(n).padStart(2,'0');
   const str = `${pad(Math.floor(d/3600000))}:${pad(Math.floor((d%3600000)/60000))}:${pad(Math.floor((d%60000)/1000))}`;
   ['cd-game','cd-lb'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = str; });

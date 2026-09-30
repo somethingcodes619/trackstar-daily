@@ -6,7 +6,7 @@
 // The answer is derived from lib/schedule.js — the SAME seeded pick today.js
 // uses — so no database and no drift. No external API call needed here.
 
-const { POOL, pickArtist } = require('./lib/schedule');
+const { POOL, pickArtist, scoreFor } = require('./lib/schedule');
 
 // Case / space / punctuation insensitive matching.
 function normalize(str) {
@@ -91,7 +91,7 @@ exports.handler = async (event) => {
     return resp(400, { error: 'Invalid JSON' });
   }
 
-  const { date, roundIdx, guess } = body;
+  const { date, roundIdx, guess, playCount } = body;
   if (!date || roundIdx === undefined || guess === undefined) {
     return resp(400, { error: 'Missing date, roundIdx, or guess' });
   }
@@ -106,8 +106,15 @@ exports.handler = async (event) => {
     return resp(404, { error: 'No drop for this date' });
   }
 
+  const correct = isMatch(guess, artist.name);
+  // Points are computed here, not trusted from the client — a guess can
+  // only ever earn what a real playCount of 1-3 on this tier is worth.
+  const { earned, playCount: usedPlays } = scoreFor(tier, Number(playCount));
+
   return resp(200, {
-    correct: isMatch(guess, artist.name),
+    correct,
+    earned: correct ? earned : 0,
+    playCount: usedPlays,
     artist: artist.name, // revealed only after a guess is submitted
     tier,
   });
