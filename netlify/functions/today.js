@@ -9,7 +9,7 @@
 
 const { connectLambda } = require('@netlify/blobs');
 const { POOL, TIERS, pickArtist, dropNumber, seededShuffle } = require('./lib/schedule');
-const { store, isValidPlayerId } = require('./lib/players');
+const { store, summarizeFromRounds, isValidPlayerId } = require('./lib/players');
 
 // Node 18+ (Netlify default) ships a global fetch; fall back to node-fetch locally.
 const fetch = globalThis.fetch
@@ -160,9 +160,6 @@ exports.handler = async (event) => {
   // since that would leak one player's progress to every other viewer.
   const alreadyPlayed = await lookupAlreadyPlayed(event, date, qp.playerId);
   const body = alreadyPlayed ? { ...payload, alreadyPlayed } : payload;
-  if (qp.debug === '1' && isValidPlayerId(qp.playerId)) {
-    body.__debug = await debugDump(event, date, qp.playerId);
-  }
 
   // Any request carrying a playerId must never be cached — by a CDN *or*
   // by the requesting browser itself — even on a run where alreadyPlayed
@@ -176,31 +173,12 @@ async function lookupAlreadyPlayed(event, date, playerId) {
   if (!isValidPlayerId(playerId)) return null;
   try {
     connectLambda(event);
-    const progress = await store('results').get(`${date}/${playerId}`, { type: 'json' });
-    if (!progress || !progress.finished) return null;
-    return { score: progress.score, tierReached: progress.tierReached, cleared: progress.cleared };
+    const summary = await summarizeFromRounds(store('rounds'), date, playerId);
+    if (!summary.finished) return null;
+    return { score: summary.score, tierReached: summary.tierReached, cleared: summary.cleared };
   } catch (_) {
     return null; // Blobs hiccup — just don't report a played-status this time
   }
-}
-
-// TEMPORARY — remove once the live persistence issue is diagnosed.
-async function debugDump(event, date, playerId) {
-  const out = {};
-  try {
-    connectLambda(event);
-    out.resultsDoc = await store('results').get(`${date}/${playerId}`, { type: 'json' });
-  } catch (e) { out.resultsErr = String((e && e.stack) || e); }
-  try {
-    const { blobs } = await store('rounds').list({ prefix: `${date}/${playerId}/` });
-    out.roundKeys = blobs.map((b) => b.key);
-    out.roundDocs = {};
-    for (const b of blobs) out.roundDocs[b.key] = await store('rounds').get(b.key, { type: 'json' });
-  } catch (e) { out.roundsErr = String((e && e.stack) || e); }
-  try {
-    out.playerDoc = await store('players').get(playerId, { type: 'json' });
-  } catch (e) { out.playerErr = String((e && e.stack) || e); }
-  return out;
 }
 
 function json(statusCode, body, cacheState, cacheable) {

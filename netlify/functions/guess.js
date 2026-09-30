@@ -13,7 +13,7 @@
 
 const { connectLambda } = require('@netlify/blobs');
 const { POOL, pickArtist, scoreFor } = require('./lib/schedule');
-const { store, summarizeDay, isValidPlayerId, sanitizeName, shiftDate, blankPlayer } = require('./lib/players');
+const { store, summarizeFromRounds, isValidPlayerId, sanitizeName, shiftDate, blankPlayer } = require('./lib/players');
 
 // Case / space / punctuation insensitive matching.
 function normalize(str) {
@@ -143,24 +143,28 @@ exports.handler = async (event) => {
 // trusts anything from the client except which round this is and whether
 // it was correct — both independently verified above.
 //
-// Design note: this used to be a read-modify-write on one mutable per-day
-// doc ("read current progress, is this the next tier?, append, save").
-// That raced — two guesses submitted close together could both read the
-// state *before* either write landed, so the second one looked "out of
-// order" and was silently dropped. Blobs defaults to eventually-consistent
-// reads, and forcing strong consistency turned out to need an edge URL
-// this runtime doesn't get auto-configured with (it just threw).
+// Design history, because this went through two wrong turns first:
+//  1. A read-modify-write on one mutable per-day doc ("read current
+//     progress, is this the next tier?, append, save") raced — two guesses
+//     close together could both read the state *before* either write
+//     landed, so the second looked "out of order" and was silently
+//     dropped. Forcing strong-consistency reads to fix that just threw
+//     (this runtime's auto-config has no edge URL for it).
+//  2. Switched each round to its own key, written once via an atomic
+//     onlyIfNew PUT (still true, below) — durable and race-free. But then
+//     a *cached summary* was written back after computing it, and that
+//     write could be computed from a still-converging read and get stuck
+//     forever: nothing ever re-triggers a correction once the day is over
+//     and no more rounds come in for it.
 //
-// So instead: each round is written to its own key, once, via an atomic
-// onlyIfNew conditional PUT — no read-before-write, no ordering to race.
-// The day's score/tierReached/finished is then *derived* fresh from
-// whatever rounds are on record, every time — a pure function of durable
-// facts, never mutable state carried forward, so it can't be corrupted by
-// a stale read. See summarizeDay() in lib/players.js.
+// So: only the per-round facts are durable state. The summary is never
+// cached — summarizeFromRounds() (lib/players.js) recomputes it from
+// scratch on every read, in guess.js, leaderboard.js, stats.js and
+// today.js alike. A read that catches mid-convergence just undercounts
+// *that one read*; the next read gets a fresh chance and is never stuck.
 async function applyProgress({ date, tier, correct, earned, playCount, playerId, name }) {
   const rounds = store('rounds');
-  const results = store('results');
-  const history = store('history');
+  const roster = store('roster');
   const players = store('players');
   const nameClean = sanitizeName(name);
 
@@ -174,27 +178,21 @@ async function applyProgress({ date, tier, correct, earned, playCount, playerId,
   // for this player+day (a replay) — harmless, we still recompute below,
   // just won't touch the lifetime aggregate for it again.
 
-  const shouldHaveFinished = !correct || tier === 6;
-  let summary = await deriveSummary(rounds, date, playerId);
-  // Our own read here can, rarely, still lag our own write by a beat. If
-  // we know this exact round should have ended the day but the freshly
-  // recomputed summary doesn't agree yet, give it a couple of short
-  // retries so the lifetime-aggregate fold-in below isn't skipped.
-  for (let i = 0; i < 3 && shouldHaveFinished && !summary.finished; i++) {
-    await new Promise((r) => setTimeout(r, 200));
-    summary = await deriveSummary(rounds, date, playerId);
-  }
+  // Roster entry so leaderboard.js knows this player played today, without
+  // needing a numeric snapshot of their score (that part is always
+  // recomputed live). Safe to just overwrite — it only ever holds a name.
+  await roster.setJSON(`${date}/${playerId}`, { name: nameClean });
 
-  const summaryDoc = { name: nameClean, ...summary, updatedAt: new Date().toISOString() };
-  // Two requests can finish out of the order they were sent in (the one
-  // sent first isn't guaranteed to be the one that *completes* first), so
-  // a plain overwrite here could let an older, less-complete summary land
-  // after — and clobber — a newer one. Guard with a monotonic rank so a
-  // write can only ever move a day's stored progress forward, never back.
-  await Promise.all([
-    writeIfProgressed(results, `${date}/${playerId}`, summaryDoc),
-    writeIfProgressed(history, `${playerId}/${date}`, summaryDoc),
-  ]);
+  const shouldHaveFinished = !correct || tier === 6;
+  let summary = await summarizeFromRounds(rounds, date, playerId);
+  // Best-effort: give a just-finished day a few short retries so the
+  // lifetime-aggregate fold-in below isn't needlessly skipped. If it still
+  // doesn't converge in time, nothing is lost — summarizeFromRounds() will
+  // simply compute correctly on the next read, whenever that happens.
+  for (let i = 0; i < 5 && shouldHaveFinished && !summary.finished; i++) {
+    await new Promise((r) => setTimeout(r, 300));
+    summary = await summarizeFromRounds(rounds, date, playerId);
+  }
 
   if (write.modified && summary.finished) {
     const player = (await players.get(playerId, { type: 'json' })) || blankPlayer(nameClean);
@@ -215,32 +213,6 @@ async function applyProgress({ date, tier, correct, earned, playCount, playerId,
   }
 
   return summary;
-}
-
-async function deriveSummary(rounds, date, playerId) {
-  const prefix = `${date}/${playerId}/`;
-  const { blobs } = await rounds.list({ prefix });
-  const entries = await Promise.all(
-    blobs.map(async (b) => [Number(b.key.slice(prefix.length)), await rounds.get(b.key, { type: 'json' })])
-  );
-  const byTier = {};
-  for (const [tier, doc] of entries) if (doc) byTier[tier] = doc;
-  return summarizeDay(byTier);
-}
-
-// A day's progress only ever moves forward: more tiers cleared, or cleared
-// ranking above not-yet-finished. Rank the doc on that scale and skip the
-// write if it wouldn't advance the stored value — the guard against two
-// concurrent requests' writes landing out of order and the later (but
-// staler-computed) one clobbering the more-complete one.
-function progressRank(doc) {
-  return (doc.tierReached || 0) * 2 + (doc.finished ? 1 : 0);
-}
-async function writeIfProgressed(blobStore, key, doc) {
-  let existing = null;
-  try { existing = await blobStore.get(key, { type: 'json' }); } catch (_) { /* treat as absent */ }
-  if (existing && progressRank(existing) > progressRank(doc)) return; // would regress — skip
-  await blobStore.setJSON(key, doc);
 }
 
 function resp(statusCode, body) {

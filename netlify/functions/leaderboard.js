@@ -4,9 +4,9 @@
 // data. Falls back to an empty board (never fake names) if Blobs is down.
 
 const { connectLambda } = require('@netlify/blobs');
-const { store, utcDate } = require('./lib/players');
+const { store, summarizeFromRounds, utcDate } = require('./lib/players');
 
-const TODAY_SCORE_LIMIT = 200;  // bound how many of today's results we'll fetch
+const TODAY_SCORE_LIMIT = 200;  // bound how many of today's players we'll score
 const STREAK_LEADER_LIMIT = 200; // bound how many players we'll scan for streaks
 
 exports.handler = async (event) => {
@@ -15,22 +15,30 @@ exports.handler = async (event) => {
 
   try {
     connectLambda(event);
-    const results = store('results');
+    const roster = store('roster');
+    const rounds = store('rounds');
     const players = store('players');
 
-    const { blobs } = await results.list({ prefix: `${date}/` });
-    const todayKeys = blobs.slice(0, TODAY_SCORE_LIMIT).map((b) => b.key);
-    const todayDocs = await Promise.all(todayKeys.map((k) => results.get(k, { type: 'json' })));
+    // `roster` just answers "who played today, under what name" — the
+    // score itself is always recomputed live from `rounds` (see
+    // summarizeFromRounds in lib/players.js) rather than trusting any
+    // cached number, so a still-converging read can only ever undercount
+    // a single request, never get permanently stuck wrong.
+    const { blobs } = await roster.list({ prefix: `${date}/` });
+    const rosterKeys = blobs.slice(0, TODAY_SCORE_LIMIT).map((b) => b.key);
+    const rosterDocs = await Promise.all(rosterKeys.map((k) => roster.get(k, { type: 'json' })));
 
-    const scores = todayDocs
-      .filter(Boolean)
-      .map((d, i) => ({
-        playerId: todayKeys[i].slice(date.length + 1),
-        name: d.name || 'Guest',
-        score: d.score || 0,
-        tierReached: d.tierReached || 0,
-        finished: !!d.finished,
-      }))
+    const scores = (await Promise.all(rosterKeys.map(async (key, i) => {
+      const playerId = key.slice(date.length + 1);
+      const summary = await summarizeFromRounds(rounds, date, playerId);
+      return {
+        playerId,
+        name: (rosterDocs[i] && rosterDocs[i].name) || 'Guest',
+        score: summary.score,
+        tierReached: summary.tierReached,
+        finished: summary.finished,
+      };
+    })))
       .sort((a, b) => b.score - a.score)
       .slice(0, 20);
 

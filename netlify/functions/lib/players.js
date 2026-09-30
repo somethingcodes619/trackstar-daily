@@ -28,6 +28,25 @@ function summarizeDay(roundsByTier) {
   return { score, tierReached, finished, cleared };
 }
 
+// The single source of truth for "what has this player scored today":
+// read every round on record for them and derive the summary fresh, every
+// time. Deliberately NOT cached anywhere — an earlier version wrote a
+// snapshot of this back to Blobs after each round, and that snapshot could
+// end up permanently stuck if the write happened to be computed from a
+// still-converging read, with no later event to ever correct it. The
+// rounds themselves (written once, idempotently, never overwritten) are
+// the durable fact; everything else is just a read of them.
+async function summarizeFromRounds(roundsStore, date, playerId) {
+  const prefix = `${date}/${playerId}/`;
+  const { blobs } = await roundsStore.list({ prefix });
+  const entries = await Promise.all(
+    blobs.map(async (b) => [Number(b.key.slice(prefix.length)), await roundsStore.get(b.key, { type: 'json' })])
+  );
+  const byTier = {};
+  for (const [tier, doc] of entries) if (doc) byTier[tier] = doc;
+  return summarizeDay(byTier);
+}
+
 const ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 
 // Player IDs are client-generated (crypto.randomUUID()) — just check the
@@ -76,4 +95,4 @@ function blankPlayer(name) {
   };
 }
 
-module.exports = { store, summarizeDay, isValidPlayerId, sanitizeName, utcDate, shiftDate, blankPlayer };
+module.exports = { store, summarizeDay, summarizeFromRounds, isValidPlayerId, sanitizeName, utcDate, shiftDate, blankPlayer };

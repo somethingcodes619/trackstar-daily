@@ -5,7 +5,7 @@
 // what guess.js has actually persisted for them.
 
 const { connectLambda } = require('@netlify/blobs');
-const { store, isValidPlayerId, utcDate, blankPlayer } = require('./lib/players');
+const { store, summarizeFromRounds, isValidPlayerId, utcDate, blankPlayer } = require('./lib/players');
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -18,25 +18,26 @@ exports.handler = async (event) => {
   try {
     connectLambda(event);
     const players = store('players');
-    const history = store('history');
+    const rounds = store('rounds');
 
     const player = (await players.get(playerId, { type: 'json' })) || blankPlayer();
 
-    // Last 7 calendar days (UTC), oldest first, today last.
+    // Last 7 calendar days (UTC), oldest first, today last. Each day's
+    // score is recomputed live from `rounds` (see summarizeFromRounds in
+    // lib/players.js) — never a cached snapshot, so it can't get stuck.
     const dates = [-6, -5, -4, -3, -2, -1, 0].map((off) => utcDate(off));
-    const days = await Promise.all(
-      dates.map((d) => history.get(`${playerId}/${d}`, { type: 'json' }))
-    );
+    const daySummaries = await Promise.all(dates.map((d) => summarizeFromRounds(rounds, d, playerId)));
 
     const last7 = dates.map((d, i) => {
-      const rec = days[i];
+      const s = daySummaries[i];
+      const played = s.finished || s.tierReached > 0;
       const dow = new Date(`${d}T00:00:00Z`).getUTCDay();
       return {
         date: d,
         label: DAY_LABELS[dow],
-        played: !!rec,
-        won: rec ? rec.tierReached >= 1 : null,
-        score: rec ? rec.score : null,
+        played,
+        won: played ? s.tierReached >= 1 : null,
+        score: played ? s.score : null,
         today: d === utcDate(0),
       };
     });
