@@ -341,6 +341,10 @@
 
   <!-- ═══ STATS ═══ -->
   <div class="panel" id="panel-stats">
+    <div class="about-text" style="margin-bottom:16px;">
+      Playing as <strong style="color:var(--text);font-weight:500;" id="player-name-display">Guest0000</strong>
+      — <a href="#" onclick="renamePlayer();return false;">change</a>
+    </div>
     <div style="display:flex;align-items:flex-end;gap:12px;margin-bottom:20px;">
       <div class="big-streak" id="stat-streak">0</div>
       <div>
@@ -432,16 +436,70 @@ let playTimer = null;
 let activeBars = [];
 let audio     = null;
 
+/* ══════════════════════════════════════
+   PLAYER IDENTITY
+   Anonymous, device-local id + a display name. Both are mirrored
+   server-side (netlify/functions/player.js) so the leaderboard and
+   stats are built from real per-player records, not this browser's
+   localStorage — see lib/players.js and guess.js's applyProgress().
+══════════════════════════════════════ */
+function uuid() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'p-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+}
+let playerId = localStorage.getItem('ts_player_id');
+if (!playerId) { playerId = uuid(); localStorage.setItem('ts_player_id', playerId); }
+
+let playerName = localStorage.getItem('ts_player_name');
+if (!playerName) { playerName = 'Guest' + Math.floor(1000 + Math.random() * 9000); localStorage.setItem('ts_player_name', playerName); }
+
+function registerPlayer() {
+  fetch('/.netlify/functions/player', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId, name: playerName }),
+  }).catch(() => {}); // offline is fine — this just gets retried on the next call
+}
+
+function renamePlayer() {
+  const next = prompt('Pick a name for the leaderboard (24 characters max):', playerName);
+  if (next === null) return;
+  const clean = next.trim().slice(0, 24);
+  if (!clean) return;
+  playerName = clean;
+  localStorage.setItem('ts_player_name', playerName);
+  registerPlayer();
+  const el = document.getElementById('player-name-display');
+  if (el) el.textContent = playerName;
+  showToast('Now playing as ' + playerName);
+  buildLeaderboard();
+}
+
+function initialsOf(name) {
+  const parts = String(name || '').trim().split(/[\s_]+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return (String(name || '??').slice(0, 2)).toUpperCase();
+}
+
+// Stable-ish per-name color so the same player looks the same across loads.
+function avatarColors(name) {
+  let h = 0;
+  const s = String(name || '');
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  const hue = h % 360;
+  return { bg: `hsl(${hue} 42% 15%)`, tc: `hsl(${hue} 70% 64%)` };
+}
+
+// Local fallback streak/best-score — only used while /stats can't be reached.
 const dayStreak = parseInt(localStorage.getItem('ts_streak') || '0');
 const bestScore = parseInt(localStorage.getItem('ts_best')   || '0');
 
-const LEADERBOARD = [
-  { name:'DJ_Remy',   initials:'DR', bg:'#1a1a3e', tc:'#7070e0', score:1840, streak:31 },
-  { name:'BeatKween', initials:'BK', bg:'#1a2e1a', tc:'#6dd66d', score:1520, streak:28 },
-  { name:'You',       initials:'YO', bg:'#2e1710', tc:'#ff5b00', score:0,    streak:dayStreak, isYou:true },
-  { name:'WaxPoetic', initials:'WP', bg:'#2e1a1a', tc:'#e06060', score:1100, streak:15 },
-  { name:'TrackHead', initials:'TH', bg:'#1a2a2e', tc:'#50b0c0', score:980,  streak:9  },
-  { name:'BasslineQ', initials:'BQ', bg:'#1e1a2e', tc:'#a070e0', score:760,  streak:5  },
+// Demo/offline fallback leaderboard — only shown if /leaderboard can't be reached.
+const DEMO_LEADERBOARD = [
+  { name:'DJ_Remy',   score:1840, currentStreak:31 },
+  { name:'BeatKween', score:1520, currentStreak:28 },
+  { name:'WaxPoetic', score:1100, currentStreak:15 },
+  { name:'TrackHead', score:980,  currentStreak:9  },
+  { name:'BasslineQ', score:760,  currentStreak:5  },
 ];
 
 /* ══════════════════════════════════════
@@ -468,6 +526,10 @@ function updateTierUI(tierNum) {
    INIT
 ══════════════════════════════════════ */
 async function init() {
+  registerPlayer();
+  const nameEl = document.getElementById('player-name-display');
+  if (nameEl) nameEl.textContent = playerName;
+
   // Already played today?
   const today      = new Date().toISOString().split('T')[0];
   const lastPlayed = localStorage.getItem('ts_last_played');
@@ -484,12 +546,22 @@ async function init() {
   }
 
   try {
-    const res  = await fetch('/.netlify/functions/today');
+    const res  = await fetch('/.netlify/functions/today?playerId=' + encodeURIComponent(playerId));
     if (!res.ok) throw new Error('no drop');
     const data = await res.json();
     rounds = data.rounds;
     document.getElementById('drop-number').textContent = '#' + data.number;
     document.getElementById('lb-title').textContent    = 'Top Scores — Day #' + data.number;
+
+    if (data.alreadyPlayed) {
+      // No local record (cleared storage, or a different browser) but the
+      // server remembers — don't let today's puzzle be replayed.
+      score = data.alreadyPlayed.score;
+      localStorage.setItem('ts_last_played', today);
+      localStorage.setItem('ts_today_score', score);
+      showAlreadyPlayed();
+      return;
+    }
   } catch {
     rounds = DEMO_ROUNDS; // offline / dev fallback
     document.getElementById('drop-number').textContent = '#' + DEMO_META.number;
@@ -668,7 +740,7 @@ async function submitGuess() {
     const res = await fetch('/.netlify/functions/guess', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ date: new Date().toISOString().split('T')[0], roundIdx, guess: val, playCount }),
+      body:    JSON.stringify({ date: new Date().toISOString().split('T')[0], roundIdx, guess: val, playCount, playerId, name: playerName }),
     });
     const result = await res.json();
     isCorrect        = result.correct;
@@ -707,7 +779,6 @@ async function submitGuess() {
       t.label + ' · ' + playCount + ' play' + (playCount !== 1 ? 's' : '') + ' used</span>';
 
     document.getElementById('score-today').textContent = score;
-    LEADERBOARD[2].score = score;
     document.getElementById('next-actions').style.display = 'block';
 
     // Preview the next tier on the button
@@ -754,9 +825,10 @@ function saveResult() {
   localStorage.setItem('ts_last_played',  today);
   localStorage.setItem('ts_today_score',  score);
   if (score > bestScore) localStorage.setItem('ts_best', score);
-  LEADERBOARD[2].score  = score;
-  LEADERBOARD[2].streak = dayStreak;
+  // guess.js already wrote the authoritative result as each round resolved —
+  // this just pulls the now-updated board back down.
   buildLeaderboard();
+  buildStats();
 }
 
 /* ══════════════════════════════════════
@@ -794,62 +866,106 @@ function switchTab(name) {
 /* ══════════════════════════════════════
    LEADERBOARD
 ══════════════════════════════════════ */
-function buildLeaderboard() {
-  const sorted = [...LEADERBOARD].sort((a, b) => (b.isYou ? score : b.score) - (a.isYou ? score : a.score));
+async function buildLeaderboard() {
   const rc = ['gold','silver','bronze','','',''];
   const rl = ['1st','2nd','3rd','4th','5th','6th'];
-  document.getElementById('lb-list').innerHTML = sorted.map((e, i) => `
-    <div class="lb-item">
-      <div class="lb-rank ${rc[i]}">${rl[i]}</div>
-      <div class="lb-avatar" style="background:${e.bg};color:${e.tc}">${e.initials}</div>
-      <div class="lb-name">${e.name}${e.isYou ? '<span class="you-tag">YOU</span>' : ''}</div>
-      <div class="lb-score"><span>${e.isYou ? score : e.score}</span>pts</div>
-    </div>`).join('');
 
-  const maxSt = Math.max(...LEADERBOARD.map(e => e.isYou ? dayStreak : e.streak));
-  document.getElementById('streak-bars').innerHTML = LEADERBOARD.slice(0, 5).map(e => `
+  let scores, streaks;
+  try {
+    const res = await fetch('/.netlify/functions/leaderboard');
+    if (!res.ok) throw new Error('no leaderboard');
+    const data = await res.json();
+    scores  = data.scores  || [];
+    streaks = data.streaks || [];
+  } catch {
+    scores  = DEMO_LEADERBOARD;
+    streaks = DEMO_LEADERBOARD;
+  }
+
+  // Always show your own row, even before you're on today's board.
+  const already = scores.find(e => e.playerId === playerId);
+  const board = already
+    ? scores.map(e => e.playerId === playerId ? { ...e, name: playerName, isYou: true } : e)
+    : [...scores, { playerId, name: playerName, score, isYou: true }];
+  board.sort((a, b) => b.score - a.score);
+
+  document.getElementById('lb-list').innerHTML = board.slice(0, 6).map((e, i) => {
+    const c = avatarColors(e.name);
+    return `
+    <div class="lb-item">
+      <div class="lb-rank ${rc[i] || ''}">${rl[i] || ((i + 1) + 'th')}</div>
+      <div class="lb-avatar" style="background:${c.bg};color:${c.tc}">${initialsOf(e.name)}</div>
+      <div class="lb-name">${e.name}${e.isYou ? '<span class="you-tag">YOU</span>' : ''}</div>
+      <div class="lb-score"><span>${e.score}</span>pts</div>
+    </div>`;
+  }).join('');
+
+  const already2 = streaks.find(e => e.playerId === playerId);
+  const board2 = (already2 || dayStreak === 0)
+    ? streaks
+    : [...streaks, { playerId, name: playerName, currentStreak: dayStreak }];
+  const top = board2
+    .map(e => ({ ...e, val: e.currentStreak != null ? e.currentStreak : e.streak }))
+    .filter(e => e.val > 0)
+    .sort((a, b) => b.val - a.val)
+    .slice(0, 5);
+  const maxSt = Math.max(1, ...top.map(e => e.val));
+
+  document.getElementById('streak-bars').innerHTML = top.length ? top.map(e => `
     <div class="sbar-row">
-      <div class="sbar-name">${e.name}</div>
-      <div class="sbar"><div class="sbar-fill${e.isYou ? ' you' : ''}" style="width:${Math.round((e.isYou ? dayStreak : e.streak) / maxSt * 100)}%"></div></div>
-      <div class="sbar-val">${e.isYou ? dayStreak : e.streak}</div>
-    </div>`).join('');
+      <div class="sbar-name">${e.name}${e.playerId === playerId ? ' (you)' : ''}</div>
+      <div class="sbar"><div class="sbar-fill${e.playerId === playerId ? ' you' : ''}" style="width:${Math.round(e.val / maxSt * 100)}%"></div></div>
+      <div class="sbar-val">${e.val}</div>
+    </div>`).join('') : '<div style="font-family:var(--font-ui);font-size:12px;color:var(--text4);">No streaks yet — be the first!</div>';
 }
 
 /* ══════════════════════════════════════
    STATS
 ══════════════════════════════════════ */
-function buildStats() {
-  document.getElementById('stat-streak').textContent = dayStreak;
-  document.getElementById('stat-best').textContent   = 'Best: ' + (localStorage.getItem('ts_best_streak') || '0') + ' days';
-  document.getElementById('st-played').textContent   = localStorage.getItem('ts_total_played') || '0';
-  document.getElementById('st-winrate').textContent  = (localStorage.getItem('ts_winrate') || '0') + '%';
-  document.getElementById('st-best').textContent     = bestScore;
+async function buildStats() {
+  let s = null;
+  try {
+    const res = await fetch('/.netlify/functions/stats?playerId=' + encodeURIComponent(playerId));
+    if (!res.ok) throw new Error('no stats');
+    s = await res.json();
+  } catch { /* fall back to local-only numbers below */ }
 
-  const week = [true,true,false,true,true,true,null];
-  const dlbl = ['M','T','W','T','F','S','S'];
-  document.getElementById('week-dots').innerHTML = week.map((w, i) => `
+  const streak      = s ? s.currentStreak : dayStreak;
+  const bestStreak   = s ? s.bestStreak   : parseInt(localStorage.getItem('ts_best_streak') || '0');
+  const played       = s ? s.totalPlayed  : parseInt(localStorage.getItem('ts_total_played') || '0');
+  const winRate      = s ? s.winRate      : parseInt(localStorage.getItem('ts_winrate') || '0');
+  const best         = s ? s.bestScore    : bestScore;
+
+  document.getElementById('stat-streak').textContent = streak;
+  document.getElementById('stat-best').textContent   = 'Best: ' + bestStreak + ' days';
+  document.getElementById('st-played').textContent   = played;
+  document.getElementById('st-winrate').textContent  = winRate + '%';
+  document.getElementById('st-best').textContent     = best;
+
+  const dlbl  = ['M','T','W','T','F','S','S'];
+  const last7 = (s && s.last7) || [];
+  document.getElementById('week-dots').innerHTML = (last7.length ? last7 : Array(7).fill(null)).map((d, i) => `
     <div style="text-align:center;">
-      <div class="dot ${w===true?'won':w===false?'lost':''} ${i===6?'today':''}"></div>
-      <div style="font-family:var(--font-ui);font-weight:500;font-size:8px;color:var(--text4);margin-top:4px;">${dlbl[i]}</div>
+      <div class="dot ${d && d.played ? (d.won ? 'won' : 'lost') : ''} ${d && d.today ? 'today' : ''}"></div>
+      <div style="font-family:var(--font-ui);font-weight:500;font-size:8px;color:var(--text4);margin-top:4px;">${d ? d.label : dlbl[i]}</div>
     </div>`).join('');
 
-  const dist = [0,3,6,5,2,1];
-  const dmax = Math.max(...dist);
+  const dist = (s && s.tierCounts) || [0,0,0,0,0,0];
+  const dmax = Math.max(1, ...dist);
   document.getElementById('score-dist').innerHTML = dist.map((v, i) => `
     <div class="dist-row">
       <div class="dist-n">${i+1}</div>
-      <div class="dist-bar"><div class="dist-fill ${v===dmax?'peak':'normal'}" style="width:${dmax>0?Math.round(v/dmax*100):0}%">${v}</div></div>
+      <div class="dist-bar"><div class="dist-fill ${v === dmax && v > 0 ? 'peak' : 'normal'}" style="width:${dmax>0?Math.round(v/dmax*100):0}%">${v}</div></div>
     </div>`).join('');
 
-  const ws   = [40,95,0,110,80,130,0];
-  const wlbl = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-  const wmax = Math.max(...ws);
-  document.getElementById('score-history').innerHTML = ws.map((s, i) => `
+  const ws   = (s && s.weeklyScores) || [];
+  const wmax = Math.max(1, ...ws.map(w => w.score));
+  document.getElementById('score-history').innerHTML = ws.length ? ws.map(w => `
     <div class="sbar-row">
-      <div class="sbar-name">${wlbl[i]}</div>
-      <div class="sbar"><div class="sbar-fill" style="width:${wmax>0?Math.round(s/wmax*100):0}%;background:${s===0?'var(--bg3)':'var(--gold)'}"></div></div>
-      <div class="sbar-val">${s}</div>
-    </div>`).join('');
+      <div class="sbar-name">${w.label}</div>
+      <div class="sbar"><div class="sbar-fill" style="width:${wmax>0?Math.round(w.score/wmax*100):0}%;background:${w.score===0?'var(--bg3)':'var(--gold)'}"></div></div>
+      <div class="sbar-val">${w.score}</div>
+    </div>`).join('') : '<div style="font-family:var(--font-ui);font-size:12px;color:var(--text4);">Play your first round to see this fill in.</div>';
 }
 
 /* ══════════════════════════════════════

@@ -1,0 +1,8 @@
+{
+  "name": "trackstar-daily",
+  "version": "1.0.0",
+  "description": "Guess the artist. One shot. Daily.",
+  "dependencies": {
+    "@netlify/blobs": "^11.1.2"
+  }
+}

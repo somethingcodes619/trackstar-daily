@@ -1,12 +1,19 @@
 // netlify/functions/guess.js
-// POST /.netlify/functions/guess   { date, roundIdx, guess }
+// POST /.netlify/functions/guess   { date, roundIdx, guess, playCount, playerId, name }
 // Validates a guess server-side so the artist answer is never in the frontend.
-// Returns { correct, artist, tier }.
+// Returns { correct, artist, tier, earned, ... }.
 //
 // The answer is derived from lib/schedule.js — the SAME seeded pick today.js
-// uses — so no database and no drift. No external API call needed here.
+// uses — so no database and no drift for *validating* a guess.
+//
+// If a playerId is attached, this is also the ONLY place a player's score
+// is ever written. Each round is scored and appended here, one at a time,
+// in order — the client never gets to hand over a final score. See
+// applyProgress() below.
 
+const { connectLambda, getStore } = require('@netlify/blobs');
 const { POOL, pickArtist, scoreFor } = require('./lib/schedule');
+const { isValidPlayerId, sanitizeName, shiftDate, blankPlayer } = require('./lib/players');
 
 // Case / space / punctuation insensitive matching.
 function normalize(str) {
@@ -91,7 +98,7 @@ exports.handler = async (event) => {
     return resp(400, { error: 'Invalid JSON' });
   }
 
-  const { date, roundIdx, guess, playCount } = body;
+  const { date, roundIdx, guess, playCount, playerId, name } = body;
   if (!date || roundIdx === undefined || guess === undefined) {
     return resp(400, { error: 'Missing date, roundIdx, or guess' });
   }
@@ -111,14 +118,86 @@ exports.handler = async (event) => {
   // only ever earn what a real playCount of 1-3 on this tier is worth.
   const { earned, playCount: usedPlays } = scoreFor(tier, Number(playCount));
 
+  let persisted = null;
+  if (isValidPlayerId(playerId)) {
+    try {
+      connectLambda(event);
+      persisted = await applyProgress({ date, tier, correct, earned, playerId, name });
+    } catch (_) {
+      // A Blobs hiccup shouldn't block the round from resolving for the
+      // player — it just won't be reflected on the leaderboard this time.
+    }
+  }
+
   return resp(200, {
     correct,
     earned: correct ? earned : 0,
     playCount: usedPlays,
     artist: artist.name, // revealed only after a guess is submitted
     tier,
+    totalScore: persisted ? persisted.score : undefined,
   });
 };
+
+// Appends one validated round onto the player's day, in order, and — only
+// the instant the day actually finishes — folds it into their lifetime
+// aggregate (streak, best score, tier distribution). Never trusts anything
+// from the client except which round this is and whether it was correct,
+// both of which were just independently verified above.
+async function applyProgress({ date, tier, correct, earned, playerId, name }) {
+  const results = getStore('results');
+  const history = getStore('history');
+  const players = getStore('players');
+
+  const key = `${date}/${playerId}`;
+  const existing = await results.get(key, { type: 'json' });
+  const progress = existing || {
+    name: sanitizeName(name), score: 0, clearedTiers: [], tierReached: 0,
+    finished: false, cleared: false,
+  };
+
+  if (progress.finished) return progress; // already resolved — ignore replays
+
+  const expectedTier = progress.clearedTiers.length + 1;
+  if (tier !== expectedTier) return progress; // out of order — ignore, don't score
+
+  progress.name = sanitizeName(name) || progress.name;
+  if (correct) {
+    progress.score += earned;
+    progress.clearedTiers.push(tier);
+    progress.tierReached = tier;
+    if (tier === 6) { progress.finished = true; progress.cleared = true; }
+  } else {
+    progress.finished = true;
+    progress.cleared = false;
+  }
+  progress.updatedAt = new Date().toISOString();
+
+  await Promise.all([
+    results.setJSON(key, progress),
+    history.setJSON(`${playerId}/${date}`, progress),
+  ]);
+
+  if (progress.finished) {
+    const player = (await players.get(playerId, { type: 'json' })) || blankPlayer(progress.name);
+    const yesterday = shiftDate(date, -1);
+    player.currentStreak = player.lastPlayedDate === yesterday ? player.currentStreak + 1
+      : player.lastPlayedDate === date ? player.currentStreak
+      : 1;
+    player.bestStreak = Math.max(player.bestStreak, player.currentStreak);
+    player.lastPlayedDate = date;
+    player.bestScore = Math.max(player.bestScore, progress.score);
+    player.totalPlayed += 1;
+    player.name = progress.name || player.name;
+    if (progress.tierReached >= 1) {
+      player.wins += 1;
+      player.tierCounts[progress.tierReached - 1] = (player.tierCounts[progress.tierReached - 1] || 0) + 1;
+    }
+    await players.setJSON(playerId, player);
+  }
+
+  return progress;
+}
 
 function resp(statusCode, body) {
   return {
